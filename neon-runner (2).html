@@ -1,0 +1,1556 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Neon Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: full-bleed pseudo-3D desert highway; speed + nitro pinned top-left, stats top-right; steering wheel bottom-left, pedals + handbrake + N2O bottom-right. Single dark look chosen on purpose (night-dash HUD over a bright road). */
+:root {
+  --ink: #0e0a17;
+  --violet: #8a3ffc;
+  --violet-hi: #b57bff;
+  --taillight: #ff2b45;
+  --nitro: #43c6ff;
+  --sand: #dcbf90;
+  --haze: #f0d7b0;
+  --hud: #f5efff;
+  --glass: rgba(14, 10, 23, 0.5);
+  --glass-line: rgba(255, 255, 255, 0.24);
+  --font-display: 'Chakra Petch', 'Segoe UI', system-ui, sans-serif;
+  --font-label: 'Barlow Condensed', 'Arial Narrow', system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; background: #000; }
+body {
+  margin: 0;
+  background: #000;
+  color: var(--hud);
+  font-family: var(--font-display);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.stage { position: fixed; inset: 0; margin: auto; width: 100%; height: 100%; background: var(--ink); overflow: hidden; }
+.ui {
+  position: absolute; left: 0; top: 0; pointer-events: none; container-type: size;
+  width: calc(100% / var(--s, 1)); height: calc(100% / var(--s, 1));
+  transform: scale(var(--s, 1)); transform-origin: 0 0;
+}
+.splash { pointer-events: auto; }
+canvas { display: block; width: 100%; height: 100%; }
+
+.hud { position: absolute; pointer-events: none; }
+.tl { left: max(16px, env(safe-area-inset-left, 0px)); top: calc(10px + env(safe-area-inset-top, 0px)); }
+.tr { right: max(16px, env(safe-area-inset-right, 0px)); top: calc(8px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: auto; }
+.chips { display: flex; gap: 6px; }
+.gauge { width: clamp(96px, 36cqh, 150px); height: auto; filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5)); }
+.gauge text { font-family: var(--font-display); font-weight: 700; fill: #fff; text-anchor: middle; font-style: italic; }
+.panel { width: clamp(150px, 27cqw, 230px); padding: 6px 9px 7px; background: var(--glass); border: 1px solid var(--glass-line); border-left: 3px solid var(--violet-hi); border-radius: 3px; backdrop-filter: blur(3px); }
+.row2 { display: flex; justify-content: space-between; align-items: baseline; font: 600 clamp(10px, 3cqh, 13px) var(--font-label); letter-spacing: 0.14em; text-transform: uppercase; line-height: 1.5; }
+.row2 span { opacity: 0.75; }
+.row2 b { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-weight: 700; letter-spacing: 0.04em; color: var(--nitro); }
+.row2 b span { opacity: 1; }
+.pbar { height: 3px; background: rgba(255, 255, 255, 0.2); margin: 1px 0 3px; }
+.pbar i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--violet), var(--nitro)); }
+.speed { display: flex; align-items: baseline; gap: 6px; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55); }
+.speed span {
+  font-size: clamp(36px, 9cqh, 60px); font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; min-width: 3ch; font-style: italic;
+}
+.speed small, .stat small, .chip {
+  font-family: var(--font-label); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+}
+.speed small { font-size: 14px; opacity: 0.85; }
+.nitro { margin-top: 6px; display: flex; align-items: center; gap: 8px; width: clamp(140px, 28cqw, 210px); }
+.nitro label { font: 600 13px var(--font-label); letter-spacing: 0.16em; color: var(--nitro); }
+.nitro .bar { flex: 1; height: 9px; background: rgba(255, 255, 255, 0.2); overflow: hidden; transform: skewX(-20deg); border-radius: 2px; }
+.nitro i { display: block; height: 100%; width: 60%; background: linear-gradient(90deg, #2b7bff, var(--nitro)); }
+.nitro.on label { color: #fff; }
+.stat { font-weight: 700; font-size: 18px; line-height: 1.1; font-variant-numeric: tabular-nums; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+.stat small { display: block; font-size: 12px; opacity: 0.8; font-weight: 600; }
+.chip {
+  pointer-events: auto; color: var(--hud); background: var(--glass); border: 1px solid var(--glass-line);
+  padding: 6px 10px; font-size: 12px; border-radius: 4px; cursor: pointer;
+}
+.chip:focus-visible, .go:focus-visible { outline: 2px solid var(--violet-hi); outline-offset: 2px; }
+
+.flash {
+  position: absolute; left: 50%; top: 30%; transform: translateX(-50%);
+  font-size: clamp(22px, 6cqh, 40px); font-weight: 700; font-style: italic; letter-spacing: 0.06em;
+  color: #fff; text-shadow: 0 0 18px var(--violet), 0 2px 8px rgba(0, 0, 0, 0.6);
+  opacity: 0; pointer-events: none; white-space: nowrap;
+}
+.flash.show { animation: flash 0.9s ease-out; }
+@keyframes flash {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(0.9); }
+  15% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -14px) scale(1); }
+}
+
+.controls {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: space-between; align-items: flex-end; gap: 12px;
+  padding-top: 0;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  pointer-events: none;
+}
+.wheel {
+  pointer-events: auto; touch-action: none;
+  width: clamp(104px, 32cqh, 160px); aspect-ratio: 1; max-width: 100%;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.5));
+}
+.wheel svg { width: 100%; height: 100%; display: block; will-change: transform; }
+.right { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; min-width: 0; }
+.row { display: flex; align-items: flex-end; gap: 12px; pointer-events: none; }
+.btn {
+  pointer-events: auto; touch-action: none; cursor: pointer;
+  background: var(--glass); border: 1.5px solid var(--glass-line); color: var(--hud);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  font-family: var(--font-label); font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  transition: background 0.08s, border-color 0.08s, transform 0.08s;
+}
+.btn.down { background: rgba(138, 63, 252, 0.7); border-color: var(--violet-hi); transform: scale(0.96); }
+.hb { padding: 0 16px; height: clamp(42px, 11cqh, 54px); border-radius: 27px; font-size: 14px; }
+.nos {
+  width: clamp(50px, 13cqh, 64px); aspect-ratio: 1; border-radius: 50%; font-size: 15px; letter-spacing: 0.06em;
+  border-color: var(--nitro); color: var(--nitro);
+}
+.spinb { border-color: var(--violet-hi); color: var(--violet-hi); }
+.nos.down { background: rgba(67, 198, 255, 0.55); color: #fff; border-color: #fff; }
+.pedal {
+  border-radius: 12px; align-items: flex-end; padding-bottom: 8px; font-size: 13px; box-sizing: border-box;
+  background-image: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.26) 0 3px, transparent 3px 12px);
+}
+.pedal.gas { width: clamp(58px, 16cqh, 84px); height: clamp(96px, 30cqh, 142px); }
+.pedal.brake { width: clamp(70px, 19cqh, 100px); height: clamp(66px, 20cqh, 98px); }
+
+.splash {
+  position: absolute; inset: 0; z-index: 5; display: flex; align-items: center;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px));
+  background: linear-gradient(100deg, rgba(14, 10, 23, 0.92) 0%, rgba(14, 10, 23, 0.7) 48%, rgba(14, 10, 23, 0.12) 100%);
+  overflow: auto; box-sizing: border-box;
+}
+.splash[hidden] { display: none; }
+.splash-in { max-width: 460px; min-width: 0; margin-block: auto; }
+.splash h1 {
+  margin: 0 0 6px; font-size: clamp(38px, 11cqh, 72px); line-height: 0.95; font-weight: 700; font-style: italic;
+  text-transform: uppercase; letter-spacing: 0.01em; text-wrap: balance;
+}
+.splash h1 em { font-style: italic; color: var(--violet-hi); }
+.splash p { margin: 0 0 14px; font-size: 15px; line-height: 1.45; max-width: 38ch; color: #e6dcf5; }
+.go {
+  font: 700 18px var(--font-display); letter-spacing: 0.08em; text-transform: uppercase; font-style: italic;
+  color: #fff; background: linear-gradient(135deg, var(--violet), #c13dff); border: 0; padding: 13px 30px;
+  border-radius: 6px; cursor: pointer; transform: skewX(-8deg); box-shadow: 0 6px 24px rgba(138, 63, 252, 0.45);
+}
+.help { margin: 16px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 18px; font: 500 14px/1.3 var(--font-label); letter-spacing: 0.04em; color: #d3c6e8; }
+.help b { color: #fff; font-weight: 600; }
+.help .wide { grid-column: 1 / -1; }
+.rotate { display: none; margin-top: 12px; font: 600 13px var(--font-label); letter-spacing: 0.06em; color: var(--nitro); }
+@media (orientation: portrait) { .rotate { display: block; } }
+@media (max-width: 420px) { .help { grid-template-columns: 1fr; } }
+.rotate-lock {
+  display: none; position: fixed; inset: 0; z-index: 50; background: #0e0a17; color: var(--hud);
+  flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px;
+}
+.rotate-lock .ph { width: 44px; height: 76px; border: 3px solid #fff; border-radius: 9px; position: relative; animation: tilt 2.2s ease-in-out infinite; }
+.rotate-lock .ph::after { content: ''; position: absolute; left: 50%; bottom: 5px; width: 12px; height: 3px; margin-left: -6px; background: var(--violet-hi); border-radius: 2px; }
+.rotate-lock p { margin: 0; font: 700 20px var(--font-display); font-style: italic; }
+.rotate-lock small { font: 500 14px var(--font-label); letter-spacing: 0.06em; opacity: 0.75; }
+@keyframes tilt { 0%, 25% { transform: rotate(0); } 65%, 100% { transform: rotate(-90deg); } }
+@media (orientation: portrait) and (pointer: coarse) { .rotate-lock { display: flex; } }
+@media (prefers-reduced-motion: reduce) { .flash.show { animation-duration: 0.01s; } }
+.gallery { position: fixed; inset: 0; z-index: 60; background: rgba(8,5,16,0.96); overflow: auto; padding: 16px; box-sizing: border-box; }
+.gallery[hidden] { display: none; }
+.gal-in { max-width: 720px; margin: 0 auto; }
+.gal-in h2 { font-style: italic; text-transform: uppercase; color: var(--violet-hi); }
+.gcard { border: 1px solid var(--glass-line); border-left: 3px solid var(--nitro); background: var(--glass); padding: 10px 12px; margin: 0 0 10px; border-radius: 4px; }
+.gcard b { font-family: var(--font-label); letter-spacing: 0.12em; text-transform: uppercase; color: var(--nitro); }
+.gcard p { margin: 4px 0 8px; font-size: 13px; line-height: 1.4; color: #e6dcf5; }
+
+/* layar pendek: kecilkan HUD supaya tidak numpuk */
+@container (max-height: 360px) {
+  .gauge { width: 74px; }
+  .panel { width: 118px; padding: 3px 6px 4px; }
+  .row2 { font-size: 8px; line-height: 1.35; }
+  .speed span { font-size: 24px; }
+  .nitro { width: 104px; margin-top: 3px; gap: 5px; }
+  .nitro label { font-size: 9px; } .nitro .bar { height: 6px; }
+  .chip { padding: 3px 6px; font-size: 9px; }
+  .chips { gap: 4px; } .tr { gap: 3px; }
+  .wheel { width: 68px; }
+  .controls { padding-bottom: 6px; gap: 6px; }
+  .right { gap: 5px; } .row { gap: 6px; }
+  .hb { height: 26px; padding: 0 9px; font-size: 9px; }
+  .nos { width: 34px; font-size: 9px; }
+  .pedal { font-size: 8px; padding-bottom: 4px; }
+  .pedal.gas { width: 40px; height: 62px; }
+  .pedal.brake { width: 46px; height: 42px; }
+  .flash { font-size: 16px; }
+  .splash h1 { font-size: 28px; } .splash p { font-size: 11px; margin-bottom: 8px; }
+  .go { padding: 7px 16px; font-size: 12px; }
+  .help { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <canvas id="c"></canvas>
+<div class="ui" id="ui">
+
+  <div class="hud tl">
+    <div class="panel">
+      <div class="row2"><span>Jarak</span><b><span id="jm">0</span> / <span id="jt">9.500</span> m</b></div>
+      <div class="pbar"><i id="jbar"></i></div>
+      <div class="row2"><span>Hadiah</span><b id="hadiah">0</b></div>
+      <div class="row2"><span>Rival</span><b id="rival">0</b></div>
+      <div class="row2"><span>Risiko</span><b id="risiko">0</b></div>
+      <div class="row2"><span>Montir</span><b id="montir">Siaga</b></div>
+    </div>
+    <div class="nitro" id="nitroWrap"><label>N2O</label><div class="bar"><i id="nbar"></i></div></div>
+  </div>
+
+  <div class="hud tr">
+    <div class="chips"><button class="chip" id="pause" type="button">Jeda</button><button class="chip" id="mute" type="button" aria-pressed="false">Suara: nyala</button></div>
+    <svg class="gauge" viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="60" r="57" fill="rgba(14,10,23,0.55)" stroke="rgba(255,255,255,0.3)" stroke-width="2"/>
+      <circle cx="60" cy="60" r="51" fill="none" stroke="rgba(138,63,252,0.35)" stroke-width="1.5"/>
+      <g id="gTicks"></g>
+      <g id="needle"><path d="M60 66 L60 17" stroke="#ff2b45" stroke-width="2.6" stroke-linecap="round"/></g>
+      <circle cx="60" cy="60" r="6" fill="#1a1426" stroke="#fff" stroke-width="2"/>
+      <rect x="40" y="70" width="40" height="18" rx="3" fill="rgba(0,0,0,0.55)" stroke="rgba(67,198,255,0.5)"/>
+      <text id="spd" x="60" y="84" font-size="14">0</text>
+      <text x="60" y="97" font-size="6" opacity="0.8">KM/J</text>
+      <text id="gear" x="60" y="112" font-size="14" style="fill:#b57bff">1</text>
+    </svg>
+  </div>
+
+  <div class="flash" id="flash" aria-live="polite"></div>
+
+  <div class="controls">
+    <div class="wheel" id="wheel" role="slider" aria-label="Setir" aria-valuemin="-180" aria-valuemax="180" aria-valuenow="0">
+      <svg id="wheelSvg" viewBox="0 0 120 120" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="rgba(14,10,23,0.35)" stroke="rgba(255,255,255,0.88)" stroke-width="9"/>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(138,63,252,0.7)" stroke-width="2" stroke-dasharray="3 7"/>
+        <path d="M10 62 H110" stroke="rgba(255,255,255,0.88)" stroke-width="9" stroke-linecap="round"/>
+        <path d="M60 62 V108" stroke="rgba(255,255,255,0.88)" stroke-width="9" stroke-linecap="round"/>
+        <circle cx="60" cy="60" r="15" fill="#1a1426" stroke="rgba(255,255,255,0.9)" stroke-width="4"/>
+        <rect x="56" y="4" width="8" height="14" rx="2" fill="#ff2b45"/>
+      </svg>
+    </div>
+
+    <div class="right">
+      <div class="row">
+        <div class="btn hb" id="hb" role="button" aria-label="Rem tangan">Rem tangan</div>
+        <div class="btn nos" id="nos" role="button" aria-label="Nitro">N2O</div>
+      </div>
+      <div class="row">
+        <div class="btn pedal brake" id="brake" role="button" aria-label="Rem">Rem</div>
+        <div class="btn pedal gas" id="gas" role="button" aria-label="Gas">Gas</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="splash" id="splash">
+    <div class="splash-in">
+      <h1>Neon <em>Runner</em></h1>
+      <p>Gas pol di jalan kota neon saat hujan malam. Salip semua mobil, jaga nitro buat jalan lurus.</p>
+      <button class="go" id="go" type="button">Mulai main</button> <button class="chip" id="gal" type="button">Galeri NFS (9)</button>
+      <ul class="help">
+        <li><b>Setir</b> putar di lingkaran kiri (putar jauh = spin/donut)</li>
+        <li><b>Gas / Rem</b> pedal kanan</li>
+        <li><b>Rem tangan</b> tahan + putar setir jauh buat drift spin</li>
+        <li><b>N2O</b> tahan buat ngebut</li>
+        <li class="wide"><b>Keyboard</b> panah atau WASD (A/D belok), Spasi = rem tangan (+ A/D = spin), Shift = N2O</li>
+        <li class="wide"><b>Spin otomatis</b> putar setir jauh (±120° lebih) + rem tangan atau gas = mobil langsung muter 360°, tahan terus buat donut</li>
+        <li class="wide"><b>Montir</b> 2 montir lari ke mobil yang bertabrakan (kamu atau mobil lain) dan langsung memperbaikinya</li>
+        <li class="wide"><b>Tabrak</b> mobil atau pembatas dengan keras = mobil muter 180°</li>
+      </ul>
+      <div class="rotate">Putar HP ke mode landscape biar lebih lega.</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="gallery" id="gallery" hidden><div class="gal-in"><button class="chip" id="galx" type="button">Tutup</button><h2>Galeri Scene NFS No Limits</h2><div id="galList"></div></div></div>
+<div class="rotate-lock" role="alert"><div class="ph"></div><p>Miringkan HP kamu dulu</p><small>Putar ke mode landscape buat main. Matikan kunci rotasi layar kalau tidak berputar.</small></div>
+
+<script>
+(() => {
+'use strict';
+const stageEl = document.getElementById('stage');
+const portraitMQ = window.matchMedia('(orientation: portrait) and (pointer: coarse)');
+function goLandscape() {
+  try {
+    const el = document.documentElement;
+    if (el.requestFullscreen) el.requestFullscreen().then(() => screen.orientation.lock('landscape')).catch(() => {});
+  } catch (_) {}
+}
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (a, b, t) => a + (b - a) * (-Math.cos(t * Math.PI) / 2 + 0.5);
+const easeIn = (a, b, t) => a + (b - a) * t * t;
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+/* ---------- world constants ---------- */
+const segLen = 200, roadWidth = 2000, camHeight = 1000, rumbleLen = 3;
+const drawDist = 110, fogDensity = 3.0;
+const maxSpeed = segLen * 60;                 // units per second (about 260 km/h)
+const accel = maxSpeed / 3.2, brakeA = -maxSpeed * 1.15, decelA = -maxSpeed / 6;
+const offDecel = -maxSpeed * 0.55, offLimit = maxSpeed * 0.28, centrifugal = 0.18;
+const CAR_U = 0.22;                           // car width in half-road units
+const HAZE = '#0b0816';
+const LANE_C = [-0.75, -0.25, 0.25, 0.75], LANE_S = [0.42, 0.36, 0.3, 0.24];
+const RUN_T = 1.3, LEAVE_T = 0.9, REPAIR_MIN = 1.6;   // waktu montir: lari, kerja, pergi
+const WALL = 0.88, BAR_H = 340;               // batas tengah mobil ke pembatas, tinggi pembatas
+
+let W = 0, H = 0, DPR = 1, horizon = 0, vignette = null, nitroGrad = null;
+let fov = 100, camDepth = 1 / Math.tan(fov * Math.PI / 360), playerZ = camHeight * camDepth;
+
+/* ---------- state ---------- */
+let segments = [], cars = [], trackLength = 0, N = 0;
+let position = 0, speed = 0, playerX = 0, nitro = 60, dist = 0, passed = 0;
+let spin = 0, spinCount = 0, spinT = 0, spinDir = 1, yaw = 0, shake = 0, bgOff = 0, time = 0, frameId = 0, nosOn = false, drifting = false;
+let reward = 0, risk = 0, target = 9500, lockT = 0, autoSpinCd = 0, bumpV = 0;
+let crashT = 0, crashDir = 1, crashPush = 0, grace = 0, scrapeT = 0;
+let mode = 'menu', muted = false, wheelRot = 0, wheelHeld = false;
+const input = { gas: false, brake: false, hb: false, nitro: false, kb: 0 };
+const particles = [];
+const pDmg = { lvl: 0, dents: [] };   // kerusakan mobil pemain (0..1) + daftar penyok
+const crew = { job: null, ph: 'idle', t: 0, rate: 0.3, q: [] };   // 2 montir: ph = idle | run | work | leave; job = 'player' atau objek mobil
+let chaosT = 4;
+let pHit = 0, pHitDir = 1;            // efek hentakan saat tabrakan
+const lines = Array.from({ length: 30 }, () => ({ a: rnd(0, TAU), p: Math.random(), len: rnd(0.08, 0.22) }));
+
+/* ---------- road ---------- */
+function lastY() { return segments.length ? segments[segments.length - 1].p2.world.y : 0; }
+function addSeg(curve, y) {
+  const n = segments.length;
+  segments.push({
+    index: n,
+    p1: { world: { y: lastY(), z: n * segLen }, camera: {}, screen: {} },
+    p2: { world: { y: y, z: (n + 1) * segLen }, camera: {}, screen: {} },
+    curve: curve, cars: [], props: [], alt: Math.floor(n / rumbleLen) % 2, fog: 0, clip: 0, proj: 0, looped: false
+  });
+}
+function addRoad(en, ho, le, curve, y) {
+  const sy = lastY(), ey = sy + y * segLen, tot = en + ho + le;
+  for (let n = 0; n < en; n++) addSeg(easeIn(0, curve, n / en), ease(sy, ey, n / tot));
+  for (let n = 0; n < ho; n++) addSeg(curve, ease(sy, ey, (en + n) / tot));
+  for (let n = 0; n < le; n++) addSeg(ease(curve, 0, n / le), ease(sy, ey, (en + ho + n) / tot));
+}
+function road(n, curve, h) { addRoad(n, n, n, curve, h); }
+
+function buildRoad() {
+  segments = [];
+  const S = 25, M = 50, L = 100, cE = 1.5, cM = 2.8, cH = 4, hL = 12, hM = 28, hH = 44;
+  road(S, 0, 0); road(M, 0, hL); road(M, cE, 0); road(L, 0, -hL); road(M, -cM, hM);
+  road(S, 0, 0); road(M, cM, -hM); road(L, 0, 0); road(M, cH, 0); road(M, -cH, hL);
+  road(L, cE, -hL); road(M, 0, hH); road(M, -cM, -hH); road(L, 0, 0); road(M, cM, hL);
+  road(M, -cE, 0); road(L, 0, hM); road(M, cH, -hM); road(S, -cH, 0); road(L, 0, 0);
+  road(M, cE, hL); road(M, -cM, -hL); road(L, 0, hM); road(M, 0, -hM); road(M, cM, 0);
+  road(L, -cE, hL); road(S, 0, -hL);
+  addRoad(100, 100, 100, -cE, -lastY() / segLen);
+  N = segments.length;
+  trackLength = N * segLen;
+
+  for (let n = 0; n < N; n++) {
+    const s = segments[n];
+    if (n % 8 === 0) s.props.push({ t: 'post', o: -1.2, sz: 1 }, { t: 'post', o: 1.2, sz: 1 });
+    if (Math.random() < 0.07) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      s.props.push({ t: Math.random() < 0.45 ? 'cactus' : 'rock', o: side * rnd(1.6, 8), sz: rnd(0.8, 1.6) });
+    }
+  }
+
+  cars = [];
+  const laneC = LANE_C, laneS = LANE_S;
+  const palette = [
+    { body: '#e6e6ec', hi: '#ffffff', dark: '#c4c4cf' },
+    { body: '#a9adb8', hi: '#cfd3dc', dark: '#858996' },
+    { body: '#26262e', hi: '#42424e', dark: '#17171c' },
+    { body: '#b5303a', hi: '#d9525c', dark: '#8c2229' },
+    { body: '#2c55a6', hi: '#4f7bd0', dark: '#1f3d7c' },
+    { body: '#c9b18a', hi: '#e6d3b0', dark: '#a38d69' }
+  ];
+  for (let l = 0; l < 4; l++) {
+    let z = segLen * (40 + rnd(0, 50) + l * 13);
+    while (z < trackLength - segLen * 30) {
+      const col = Object.assign({ tail: '#b3202c' }, pick(palette));
+      const car = { z: z, offset: laneC[l] + rnd(-0.05, 0.05), speed: laneS[l] * maxSpeed, kind: pick(['sport', 'sport', 'sedan', 'suv']), col: col, prevRel: 0, lvl: 0, dents: [], hitT: 0, hitDir: 1,
+        laneIdx: l, tOff: 0, baseSpeed: laneS[l] * maxSpeed, laneCd: rnd(2, 14), veerT: 0, wreck: false, wreckT: 0, tilt: 0, tiltT: 0, cool: 0, fx: 0, fxU: 0, fxRot: 0, fxBurst: false, rel: 1e9 };
+      car.tOff = car.offset;
+      cars.push(car);
+      findSeg(z).cars.push(car);
+      z += segLen * rnd(55, 130);
+    }
+  }
+}
+function findSeg(z) { return segments[Math.floor(z / segLen) % N]; }
+
+/* ---------- sizing ---------- */
+function fit() {
+  const vw = window.innerWidth, vh = window.innerHeight, ar = vw / vh;
+  let w = vw, h = vh;                       // isi layar, tapi jaga rasio 4:3 sampai 21:9 supaya gambar tidak melar
+  if (ar > 2.33) w = vh * 2.33; else if (ar < 1.33) h = vw / 1.33;
+  stageEl.style.width = Math.round(w) + 'px'; stageEl.style.height = Math.round(h) + 'px';
+  stageEl.style.setProperty('--s', Math.max(0.2, Math.min(h / 450, w / 640)));
+}
+function resize() {
+  fit();
+  DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+  const sw = stageEl.clientWidth || window.innerWidth, sh = stageEl.clientHeight || window.innerHeight;
+  if (sw * DPR > 1100) DPR = 1100 / sw;
+  DPR = Math.max(DPR, Math.min(3, 640 / sw));
+  W = Math.max(2, Math.round(sw * DPR));
+  H = Math.max(2, Math.round(sh * DPR));
+  cv.width = W; cv.height = H;
+  horizon = Math.round(H * 0.4);
+  vignette = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.4, W / 2, H * 0.55, Math.max(W, H) * 0.75);
+  vignette.addColorStop(0, 'rgba(10,5,20,0)');
+  vignette.addColorStop(1, 'rgba(10,5,20,0.5)');
+  nitroGrad = ctx.createRadialGradient(W / 2, H * 0.55, H * 0.25, W / 2, H * 0.55, Math.max(W, H) * 0.7);
+  nitroGrad.addColorStop(0, 'rgba(67,198,255,0)');
+  nitroGrad.addColorStop(1, 'rgba(67,198,255,0.5)');
+}
+
+/* ---------- audio ---------- */
+let ac = null, osc, osc2, filt, gEng;
+function initAudio() {
+  if (ac) { if (ac.resume) ac.resume(); return; }
+  try {
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    osc = ac.createOscillator(); osc.type = 'sawtooth';
+    osc2 = ac.createOscillator(); osc2.type = 'square';
+    filt = ac.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 500;
+    gEng = ac.createGain(); gEng.gain.value = 0;
+    osc.connect(filt); osc2.connect(filt); filt.connect(gEng); gEng.connect(ac.destination);
+    osc.start(); osc2.start();
+  } catch (e) { ac = null; }
+}
+function audioTick() {
+  if (!ac) return;
+  const t = ac.currentTime, sp = clamp(speed / maxSpeed, 0, 1.4);
+  const g = Math.floor(sp * 5.5), fr = sp * 5.5 - g;
+  const f = 46 + g * 10 + fr * 55 + sp * 30;
+  osc.frequency.setTargetAtTime(f, t, 0.03);
+  osc2.frequency.setTargetAtTime(f * 0.5, t, 0.03);
+  filt.frequency.setTargetAtTime(380 + sp * 900 + (nosOn ? 600 : 0), t, 0.05);
+  const on = !muted && mode === 'play' && !portraitMQ.matches;
+  gEng.gain.setTargetAtTime(on ? 0.035 + (input.gas ? 0.04 : 0) + (nosOn ? 0.03 : 0) : 0, t, 0.08);
+}
+function noise(dur, vol, freq) {
+  if (!ac || muted) return;
+  const n = Math.floor(ac.sampleRate * dur), b = ac.createBuffer(1, n, ac.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+  const s = ac.createBufferSource(); s.buffer = b;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq;
+  const g = ac.createGain(); g.gain.value = vol;
+  s.connect(f); f.connect(g); g.connect(ac.destination); s.start();
+}
+
+/* ---------- input ---------- */
+const wheelEl = $('wheel'), wheelSvg = $('wheelSvg');
+let wid = null, baseAng = 0, baseRot = 0, wcx = 0, wcy = 0;
+wheelEl.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  wheelHeld = true; wid = e.pointerId;
+  try { wheelEl.setPointerCapture(wid); } catch (_) {}
+  const r = wheelEl.getBoundingClientRect();
+  wcx = r.left + r.width / 2; wcy = r.top + r.height / 2;
+  baseAng = Math.atan2(e.clientY - wcy, e.clientX - wcx); baseRot = wheelRot;
+});
+wheelEl.addEventListener('pointermove', e => {
+  if (e.pointerId !== wid || !wheelHeld) return;
+  let d = Math.atan2(e.clientY - wcy, e.clientX - wcx) - baseAng;
+  while (d > Math.PI) d -= TAU;
+  while (d < -Math.PI) d += TAU;
+  wheelRot = clamp(baseRot + d * 57.3, -180, 180);
+});
+const wheelUp = e => { if (e.pointerId === wid) { wheelHeld = false; wid = null; } };
+wheelEl.addEventListener('pointerup', wheelUp);
+wheelEl.addEventListener('pointercancel', wheelUp);
+wheelEl.addEventListener('lostpointercapture', wheelUp);
+
+function bindHold(el, on, off) {
+  let pid = null;
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault(); pid = e.pointerId;
+    try { el.setPointerCapture(pid); } catch (_) {}
+    el.classList.add('down'); on();
+  });
+  const up = e => { if (e.pointerId !== pid) return; pid = null; el.classList.remove('down'); off(); };
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('lostpointercapture', up);
+}
+bindHold($('gas'), () => { input.gas = true; }, () => { input.gas = false; });
+bindHold($('brake'), () => { input.brake = true; }, () => { input.brake = false; });
+bindHold($('hb'), () => { input.hb = true; if (speed > maxSpeed * 0.2) noise(0.4, 0.05, 3000); }, () => { input.hb = false; });
+bindHold($('nos'), () => { input.nitro = true; if (nitro > 3) noise(0.6, 0.05, 1400); }, () => { input.nitro = false; });
+
+const keyMap = { ArrowUp: 'gas', w: 'gas', W: 'gas', ArrowDown: 'brake', s: 'brake', S: 'brake', ' ': 'hb', r: 'spinKey', R: 'spinKey', Shift: 'nitro', n: 'nitro', N: 'nitro' };
+const keysDown = {};
+window.addEventListener('keydown', e => {
+  if (e.repeat) { if (keyMap[e.key] || /^Arrow/.test(e.key)) e.preventDefault(); return; }
+  const a = keyMap[e.key];
+  if (a) { input[a] = true; if (a === 'hb' && speed > maxSpeed * 0.2) noise(0.4, 0.05, 3000); e.preventDefault(); }
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { keysDown.l = true; e.preventDefault(); }
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { keysDown.r = true; e.preventDefault(); }
+  if ((e.key === 'Enter') && mode === 'menu') startGame();
+  input.kb = (keysDown.r ? 1 : 0) - (keysDown.l ? 1 : 0);
+});
+window.addEventListener('keyup', e => {
+  const a = keyMap[e.key];
+  if (a) input[a] = false;
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keysDown.l = false;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keysDown.r = false;
+  input.kb = (keysDown.r ? 1 : 0) - (keysDown.l ? 1 : 0);
+});
+window.addEventListener('blur', () => {
+  input.gas = input.brake = input.hb = input.nitro = false; keysDown.l = keysDown.r = false; input.kb = 0;
+});
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('visibilitychange', () => { if (document.hidden && ac && ac.suspend) ac.suspend(); else if (ac && ac.resume) ac.resume(); });
+
+$('mute').addEventListener('click', () => {
+  muted = !muted;
+  $('mute').textContent = muted ? 'Suara: mati' : 'Suara: nyala';
+  $('mute').setAttribute('aria-pressed', String(muted));
+});
+
+$('pause').addEventListener('click', () => {
+  if (mode === 'play') { mode = 'pause'; $('pause').textContent = 'Lanjut'; }
+  else if (mode === 'pause') { mode = 'play'; $('pause').textContent = 'Jeda'; }
+});
+const splash = $('splash');
+function startGame() {
+  initAudio();
+  goLandscape();
+  mode = 'play';
+  splash.hidden = true;
+  position = 0; speed = 0; playerX = 0; nitro = 60; dist = 0; passed = 0; yaw = 0; spin = 0; spinT = 0; spinCount = 0; crashT = 0; grace = 0; wheelRot = 0; reward = 0; risk = 0; target = 9500; lockT = 0; autoSpinCd = 0; bumpV = 0; resetDamage();
+  flash('GAS!');
+}
+$('go').addEventListener('click', startGame);
+
+const flashEl = $('flash');
+function doSpin(label, dir) {
+  if (mode !== 'play' || spinT > 0 || crashT > 0 || speed < maxSpeed * 0.1) return;
+  spinT = 0.001; spinDir = dir || (wheelSteer() < 0 ? -1 : 1); shake = 0.8; flash(label || 'SPIN OUT!'); noise(0.9, 0.1, 1800);
+}
+function startCrash(dir, label, push) {
+  if (crashT > 0) return;
+  crashT = 0.001; crashDir = dir; crashPush = push; spinT = 0; spin = 0;
+  addDent(pDmg, 0.2, clamp(dir, -1, 1) * 0.38, rnd(0.3, 0.5), 0.2); pHit = 1; pHitDir = dir; queueRepair('player');
+  debris(W / 2 + dir * W * 0.12, H * 0.84, '#7b2ff2', 10);
+  shake = 1; nitro = Math.max(0, nitro - 15); flash(label); noise(0.5, 0.14, 700);
+  for (let k = 0; k < 14; k++) spawn('spark', W / 2 + rnd(-0.12, 0.12) * W, H * 0.82);
+}
+function flash() {}   // semua tulisan pop-up di tengah layar dimatikan
+
+/* ---------- kerusakan mobil ---------- */
+function resetDamage() {
+  pDmg.lvl = 0; pDmg.dents.length = 0; pHit = 0;
+  for (const c of cars) { c.lvl = 0; c.dents = []; c.hitT = 0; c.wreck = false; c.wreckT = 0; c.tilt = 0; c.tiltT = 0; c.fx = 0; c.cool = 0; c.veerT = 0; c.fxBurst = false; c.tOff = c.offset; c.baseSpeed = LANE_S[c.laneIdx] * maxSpeed; }
+  crew.job = null; crew.ph = 'idle'; crew.t = 0; crew.q.length = 0; chaosT = 4;
+}
+function addDent(D, amt, u, v, r) {
+  D.lvl = Math.min(1, D.lvl + amt);
+  D.dents.push({ u: u, v: v, r: Math.min(0.26, r), born: time, rot: rnd(0, TAU),
+    j: Array.from({ length: 9 }, () => rnd(0.6, 1.15)),
+    sc: Array.from({ length: 3 }, () => [rnd(-1.3, 1.3), rnd(-1, 1), rnd(-1.3, 1.3), rnd(-1, 1)]) });
+  if (D.dents.length > 8) D.dents.shift();
+}
+function debris(x, y, col, n) {
+  for (let k = 0; k < n && particles.length < 200; k++)
+    particles.push({ k: 'chip', x: x + rnd(-8, 8) * DPR, y: y, vx: rnd(-240, 240) * DPR, vy: rnd(-280, -40) * DPR, g: 720 * DPR, life: 0, max: rnd(0.5, 0.95), r: rnd(2.5, 6) * DPR, col: k % 3 === 0 ? '#d6ecff' : col });
+  for (let k = 0; k < 6; k++) spawn('spark', x + rnd(-10, 10) * DPR, y);
+}
+function spawnAt(kind, x, y, r) {
+  if (particles.length > 180) return;
+  particles.push({ k: kind, x: x, y: y, vx: rnd(-25, 25) * DPR, vy: rnd(-90, -40) * DPR, life: 0, max: rnd(0.6, 1.1), r: r });
+}
+// pemain menabrak mobil lain (dari belakang / senggolan samping)
+function hitCar(car, dx, depth, sev) {
+  const dir = dx >= 0 ? 1 : -1, K = KINDS[car.kind];
+  addDent(car, (0.14 + 0.3 * depth) * sev, clamp(dx / CAR_U * 0.9, -0.42, 0.42), K.bt * rnd(0.45, 0.8), 0.12 + 0.1 * sev * (0.4 + depth));
+  addDent(pDmg, (0.08 + 0.22 * depth) * sev, -dir * rnd(0.2, 0.42), rnd(0.3, 0.55), 0.1 + 0.08 * sev);
+  car.hitT = 1; car.hitDir = -dir; pHit = 1; pHitDir = dir;
+  shake = Math.max(shake, Math.min(0.55, 0.2 + 0.25 * depth * sev));
+  debris(W / 2 - dir * W * CAR_U * 0.5, H * 0.8, car.col.body, 8 + Math.round(6 * depth));
+  noise(0.4, 0.12, 500);
+  car.fx = 1; car.fxU = -dir * 0.4; car.fxRot = rnd(0, TAU);
+  if (car.lvl > 0.25 && !car.wreck) markWreck(car, -dir);
+  if (pDmg.lvl > 0.15) queueRepair('player');
+}
+// mobil lain menabrak pemain dari belakang
+function rearHit(car) {
+  const dx = playerX - car.offset, dir = dx >= 0 ? 1 : -1, depth = clamp(1 - Math.abs(dx) / (CAR_U * 1.05), 0, 1);
+  const rv = car.speed - speed, sev = clamp(rv / (maxSpeed * 0.35), 0.5, 1.5);
+  speed = Math.min(maxSpeed * 1.15, speed + rv * (0.5 + 0.4 * depth));
+  car.speed = lerp(car.speed, speed, 0.5);
+  bumpV += dir * (0.8 - 0.4 * depth); yaw += dir * 0.25; grace = Math.max(grace, 0.6);
+  const u = clamp(-dx / CAR_U * 0.9, -0.4, 0.4);
+  addDent(pDmg, (0.16 + 0.2 * depth) * sev, u, rnd(0.3, 0.46), 0.14 + 0.09 * sev);
+  pHit = 1; pHitDir = dir; car.hitT = 1; car.hitDir = -dir;
+  shake = Math.max(shake, Math.min(0.6, 0.3 + 0.2 * depth * sev));
+  debris(W / 2 + u * W * CAR_U * 1.08, H * 0.88, '#7b2ff2', 12);
+  noise(0.45, 0.12, 600);
+  car.fx = 1; car.fxU = 0; car.fxRot = rnd(0, TAU);
+  if (pDmg.lvl > 0.15) queueRepair('player');
+}
+
+/* ---------- tabrakan antar mobil + 2 montir ---------- */
+function markWreck(car, d) { car.wreck = true; car.wreckT = 0; car.tiltT = d * 0.28; queueRepair(car); }
+function releaseCar(car) {
+  car.wreck = false; car.wreckT = 0; car.cool = 2; car.tiltT = 0;
+  let b = 0; for (let i = 1; i < 4; i++) if (Math.abs(LANE_C[i] - car.offset) < Math.abs(LANE_C[b] - car.offset)) b = i;
+  car.laneIdx = b; car.tOff = LANE_C[b]; car.baseSpeed = LANE_S[b] * maxSpeed;
+}
+function queueRepair(job) {
+  if (crew.job === job || crew.q.includes(job)) return;
+  if (job === 'player') crew.q.unshift(job); else crew.q.push(job);
+}
+function crewUpdate(dt) {
+  if (!crew.job) {
+    if (!crew.q.length) { crew.ph = 'idle'; return; }
+    crew.job = crew.q.shift(); crew.ph = 'run'; crew.t = 0;
+  }
+  // mobil pemain rusak = prioritas, montir pindah dulu
+  if (crew.job !== 'player' && crew.q[0] === 'player' && crew.ph !== 'leave') { crew.q[0] = crew.job; crew.job = 'player'; crew.ph = 'run'; crew.t = 0; }
+  crew.t += dt;
+  const car = crew.job === 'player' ? null : crew.job, D = car || pDmg;
+  if (crew.ph === 'run' && crew.t >= RUN_T) { crew.ph = 'work'; crew.t = 0; crew.rate = Math.max(0.2, D.lvl / (REPAIR_MIN + 2.4 * D.lvl)); }
+  else if (crew.ph === 'work') {
+    D.lvl = Math.max(0, D.lvl - dt * crew.rate);
+    while (D.dents.length > Math.ceil(8 * D.lvl)) D.dents.shift();
+    if (Math.floor(crew.t * 4) !== Math.floor((crew.t - dt) * 4) && (!car || (car.rel > 0 && car.rel < segLen * 60))) noise(0.05, 0.05, 2600);
+    if (D.lvl <= 0.002) {
+      D.lvl = 0; D.dents.length = 0;
+      if (car) releaseCar(car);
+      crew.ph = 'leave'; crew.t = 0;
+    }
+  } else if (crew.ph === 'leave' && crew.t >= LEAVE_T) { crew.job = null; crew.ph = 'idle'; }
+}
+function carAI(car, dt) {
+  if (car.cool > 0) car.cool -= dt;
+  if (car.veerT > 0) car.veerT -= dt;
+  if (car.fx > 0) car.fx = Math.max(0, car.fx - dt * 2.2);
+  car.tilt = lerp(car.tilt, car.wreck ? car.tiltT : 0, 1 - Math.exp(-dt * 5));
+  if (car.wreck) {   // mobil rusak: ngerem sampai berhenti, nunggu montir
+    car.speed = lerp(car.speed, maxSpeed * 0.02, 1 - Math.exp(-dt * 2.2));
+    car.wreckT += dt;
+    if (car.wreckT > 18 && crew.job !== car) { releaseCar(car); const qi = crew.q.indexOf(car); if (qi >= 0) crew.q.splice(qi, 1); }
+    return;
+  }
+  car.speed = lerp(car.speed, car.baseSpeed, 1 - Math.exp(-dt * 0.8));
+  const v = dt * (car.veerT > 0 ? 0.55 : 0.3);
+  car.offset += clamp(car.tOff - car.offset, -v, v);
+  car.laneCd -= dt;
+  if (car.laneCd <= 0) {
+    car.laneCd = rnd(8, 20);
+    if (car.rel > segLen * 14 && car.rel < segLen * 70 && Math.random() < 0.35) {
+      const nl = clamp(car.laneIdx + (Math.random() < 0.5 ? -1 : 1), 0, 3);
+      car.laneIdx = nl; car.tOff = LANE_C[nl] + rnd(-0.05, 0.05); car.baseSpeed = LANE_S[nl] * maxSpeed;
+    }
+  }
+}
+function carCrash(a, b) {
+  const dir = a.offset >= b.offset ? 1 : -1, dof = Math.abs(a.offset - b.offset), depth = clamp(1 - dof / (CAR_U * 0.9), 0, 1);
+  for (const pr of [[a, dir], [b, -dir]]) {
+    const c = pr[0], d = pr[1], K = KINDS[c.kind];
+    addDent(c, 0.3 + 0.25 * depth, clamp(-d * 0.38 * (1.1 - depth), -0.42, 0.42), K.bt * rnd(0.45, 0.8), 0.14 + 0.08 * depth);
+    c.hitT = 1; c.hitDir = -d; c.fx = 1; c.fxU = -d * 0.42 * (1.1 - depth); c.fxRot = rnd(0, TAU);
+    c.speed *= 0.5; markWreck(c, d);
+    c.offset = clamp(c.offset + d * 0.07, -0.9, 0.9); c.tOff = c.offset;   // terpental sedikit supaya tidak tumpang tindih
+  }
+  if (a.rel > 0 && a.rel < segLen * 85) {
+    a.fxBurst = b.fxBurst = true; shake = Math.max(shake, a.rel < segLen * 40 ? 0.22 : 0.1); noise(0.45, 0.1, 600);
+  }
+}
+function trafficInteract(dt) {
+  const L = trackLength, n = cars.length;
+  for (let i = 0; i < n; i++) {
+    const a = cars[i];
+    for (let j = i + 1; j < n; j++) {
+      const b = cars[j];
+      let dz = b.z - a.z; if (dz > L / 2) dz -= L; else if (dz < -L / 2) dz += L;
+      const adz = dz < 0 ? -dz : dz;
+      if (adz > segLen * 30) continue;
+      const dof = Math.abs(a.offset - b.offset);
+      if (dof > CAR_U * 1.1) continue;
+      if (a.wreck !== b.wreck && dof < CAR_U * 0.95) {   // macet: mobil di belakang mobil rusak ikut melambat
+        const fr = dz > 0 ? b : a, bk = dz > 0 ? a : b;
+        if (fr.wreck) { const allow = fr.speed + Math.max(0, adz - segLen * 7) * 0.5; if (bk.speed > allow) bk.speed += (allow - bk.speed) * Math.min(1, dt * 5); }
+      }
+      if (!a.wreck && !b.wreck && a.cool <= 0 && b.cool <= 0 && adz < segLen * 4.5 && dof < CAR_U * 0.9) carCrash(a, b);
+    }
+  }
+  // sesekali satu mobil banting setir ke jalur mobil lain yang berdekatan -> tabrakan terlihat pemain
+  chaosT -= dt;
+  if (mode === 'play' && chaosT <= 0) {
+    chaosT = rnd(4, 8);
+    if (crew.q.length + (crew.job ? 1 : 0) < 3) {
+      const cand = cars.filter(c => !c.wreck && c.cool <= 0 && c.veerT <= 0 && c.rel > segLen * 12 && c.rel < segLen * 60);
+      if (cand.length) {
+        const a = pick(cand); let best = null, bd = segLen * 8;
+        for (const b of cars) {
+          if (b === a || b.wreck || Math.abs(b.laneIdx - a.laneIdx) !== 1) continue;
+          let dz = b.z - a.z; if (dz > L / 2) dz -= L; else if (dz < -L / 2) dz += L;
+          if (Math.abs(dz) < bd) { bd = Math.abs(dz); best = b; }
+        }
+        if (best) { a.tOff = best.offset; a.laneIdx = best.laneIdx; a.baseSpeed = best.baseSpeed; a.veerT = 2.5; }
+      }
+    }
+  }
+}
+
+/* ---------- montir (digambar di kanvas) ---------- */
+function drawMech(x, y, s, face, mode, t, col, helm) {
+  if (s < 5) return;
+  ctx.save(); ctx.translate(x, y); ctx.scale(face, 1); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(0, 0, s * 0.26, Math.max(1, s * 0.04), 0, 0, TAU); ctx.fill();
+  const run = mode === 'run', ph = t * (run ? 20 : 0), sw = Math.sin(ph), bob = run ? Math.abs(Math.cos(ph)) * s * 0.035 : 0;
+  ctx.lineWidth = s * 0.1; ctx.strokeStyle = '#242c4d'; ctx.beginPath();
+  ctx.moveTo(-s * 0.05, -s * 0.4 - bob); ctx.lineTo(-s * 0.05 + sw * s * 0.17, -s * 0.03);
+  ctx.moveTo(s * 0.05, -s * 0.4 - bob); ctx.lineTo(s * 0.05 - sw * s * 0.17, -s * 0.03); ctx.stroke();
+  ctx.translate(0, -s * 0.4 - bob); ctx.rotate(run ? 0.1 : 0.18);
+  const swing = Math.sin(t * 16), hx = run ? sw * s * 0.14 + s * 0.05 : s * 0.3, hy = run ? -s * 0.1 : -s * 0.15 + swing * s * 0.07;
+  ctx.strokeStyle = '#1b2140'; ctx.lineWidth = s * 0.07; ctx.beginPath(); ctx.moveTo(-s * 0.06, -s * 0.3); ctx.lineTo(-hx * 0.6 - s * 0.04, -s * 0.12); ctx.stroke();   // lengan belakang
+  ctx.fillStyle = col; rr(-s * 0.14, -s * 0.34, s * 0.28, s * 0.36, s * 0.05);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(-s * 0.14, -s * 0.17, s * 0.28, s * 0.04);
+  ctx.fillStyle = '#e8b98d'; ctx.beginPath(); ctx.arc(s * 0.02, -s * 0.43, s * 0.085, 0, TAU); ctx.fill();
+  ctx.fillStyle = helm; ctx.beginPath(); ctx.arc(s * 0.02, -s * 0.45, s * 0.098, Math.PI, TAU); ctx.fill(); ctx.fillRect(s * 0.02, -s * 0.465, s * 0.15, s * 0.022);
+  ctx.strokeStyle = col; ctx.lineWidth = s * 0.075; ctx.beginPath(); ctx.moveTo(s * 0.06, -s * 0.3); ctx.lineTo(hx, hy); ctx.stroke();   // lengan depan
+  if (!run) {
+    ctx.strokeStyle = '#d5d9e4'; ctx.lineWidth = s * 0.04; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx + s * 0.13, hy - s * 0.09); ctx.stroke();
+    ctx.fillStyle = '#d5d9e4'; ctx.beginPath(); ctx.arc(hx + s * 0.14, hy - s * 0.1, s * 0.035, 0, TAU); ctx.fill();
+    if (swing > 0.55) {   // percikan las
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,230,150,0.9)';
+      ctx.beginPath(); ctx.arc(hx + s * 0.17, hy - s * 0.05, s * (0.05 + 0.04 * swing), 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+  ctx.restore();
+}
+function drawCrewPair(xc, y, w, xl0, xr0) {
+  const ph = crew.ph, t = crew.t, out = ph === 'leave';
+  const p = ph === 'run' ? ease(0, 1, clamp(t / RUN_T, 0, 1)) : out ? 1 - ease(0, 1, clamp(t / LEAVE_T, 0, 1)) : 1;
+  const mode = ph === 'work' ? 'work' : 'run', s = w * 0.95, tx = w * 0.68;
+  drawMech(lerp(xl0, xc - tx, p), y, s, out ? -1 : 1, mode, t, '#ff8a1f', '#ffd23f');
+  drawMech(lerp(xr0, xc + tx, p), y, s, out ? 1 : -1, mode, t + 0.4, '#25c8ff', '#f4f6ff');
+  if (ph === 'work' && frameId % 3 === 0) spawn('spark', xc + rnd(-0.45, 0.45) * w, y - w * rnd(0.15, 0.4));
+}
+// animasi benturan: bintang kilat + cincin + serpihan di titik kontak
+function carFx(car, x, y, w, h, vis) {
+  if (car.fxBurst && w > 6) {
+    car.fxBurst = false;
+    debris(x + car.fxU * w, y - h * 0.4, car.col.body, 12);
+    for (let k = 0; k < 6; k++) spawn('spark', x + car.fxU * w + rnd(-0.1, 0.1) * w, y - h * 0.4);
+  }
+  if (car.fx <= 0) return;
+  const k = car.fx, px = x + car.fxU * w, py = y - h * 0.42, R = w * (0.28 + 0.55 * (1 - k));
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = vis * Math.min(1, k * 1.4);
+  ctx.strokeStyle = 'rgba(255,200,120,0.9)'; ctx.lineWidth = Math.max(1.5, w * 0.03 * k); ctx.beginPath(); ctx.arc(px, py, R, 0, TAU); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,235,170,' + (0.85 * k).toFixed(2) + ')'; ctx.beginPath();
+  for (let i = 0; i < 16; i++) { const a = i / 16 * TAU + car.fxRot, r = i & 1 ? R * 0.45 : R; if (i) ctx.lineTo(px + Math.cos(a) * r, py + Math.sin(a) * r * 0.8); else ctx.moveTo(px + Math.cos(a) * r, py + Math.sin(a) * r * 0.8); }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+
+/* ---------- particles ---------- */
+function spawn(kind, x, y) {
+  if (particles.length > 140) return;
+  if (kind === 'smoke') particles.push({ k: kind, x: x, y: y, vx: rnd(-40, 40) * DPR, vy: rnd(-50, -10) * DPR, life: 0, max: rnd(0.5, 0.9), r: rnd(6, 12) * DPR });
+  else if (kind === 'dust') particles.push({ k: kind, x: x, y: y, vx: rnd(-90, 90) * DPR, vy: rnd(-90, -20) * DPR, life: 0, max: rnd(0.4, 0.8), r: rnd(5, 10) * DPR });
+  else particles.push({ k: kind, x: x, y: y, vx: rnd(-60, 60) * DPR, vy: rnd(40, 160) * DPR, life: 0, max: rnd(0.15, 0.35), r: rnd(1.5, 3) * DPR });
+}
+
+/* ---------- update ---------- */
+function wheelSteer() { return clamp(wheelRot / 75, -1, 1); }
+
+function update(dt) {
+  time += dt;
+  const playing = mode === 'play';
+  const pSeg = findSeg(position + playerZ);
+  let gas = input.gas, brk = input.brake, hb = input.hb, nosReq = input.nitro;
+
+  if (playing) {
+    if (!wheelHeld) {
+      if (input.kb) wheelRot = lerp(wheelRot, input.kb * (hb ? 150 : 75), 1 - Math.exp(-dt * 8));
+      else wheelRot *= Math.exp(-dt * 9);
+    }
+  } else {
+    gas = speed < maxSpeed * 0.5; brk = false; hb = false; nosReq = false;
+    const sp0 = speed / maxSpeed;
+    wheelRot = clamp((-playerX * 1.5 + pSeg.curve * 0.18 * sp0) * 75, -100, 100);
+  }
+  const st = crashT > 0 ? 0 : wheelSteer();
+  const sp = speed / maxSpeed;
+  // combo drift-spin: setir mentok kiri/kanan + (rem tangan atau gas) = mobil langsung muter 360
+  if (playing) {
+    autoSpinCd = Math.max(0, autoSpinCd - dt);
+    const full = Math.abs(wheelRot) >= 120;
+    if (full && (hb || gas) && speed > maxSpeed * 0.3 && spinT === 0 && crashT === 0) lockT += dt * (hb ? 1.6 : 1);
+    else lockT = Math.max(0, lockT - dt * 3);
+    if (lockT >= 0.14 && autoSpinCd === 0) {
+      lockT = 0; autoSpinCd = 0.5;
+      doSpin(hb ? 'DRIFT SPIN!' : 'POWER SPIN!', wheelRot < 0 ? -1 : 1);
+      speed = Math.min(maxSpeed * 1.38, speed * 1.04);   // arcade: kecepatan tidak anjlok saat masuk putaran
+    }
+  }
+  if (crashT > 0 && crashT < 0.6) { gas = false; nosReq = false; }
+  nosOn = nosReq && nitro > 0 && speed > maxSpeed * 0.15;
+
+  if (nosOn) { speed += accel * 2.4 * dt; nitro = Math.max(0, nitro - 24 * dt); }
+  else if (gas) { speed += accel * dt * (1 - 0.5 * Math.pow(clamp(sp, 0, 1), 4)); if (playing) nitro = Math.min(100, nitro + 2.2 * dt); }
+  else speed += decelA * dt;
+  if (brk) speed += brakeA * dt;
+  if (hb) speed -= maxSpeed * 0.28 * dt;
+  const off = Math.abs(playerX) > 1.08;
+  if (off && speed > offLimit) speed += offDecel * dt;
+  if (nosOn) speed = Math.min(speed, maxSpeed * 1.38);
+  else if (speed > maxSpeed) speed = Math.max(maxSpeed, speed - maxSpeed * 0.55 * dt);
+  speed = Math.max(0, speed);
+
+  const spc = clamp(speed / maxSpeed, 0, 1.4);
+  drifting = hb && speed > maxSpeed * 0.25;
+  const dx = dt * 2.7 * spc * (hb ? 1.6 : 1);
+  const px0 = playerX;
+  playerX += dx * st + bumpV * dt;
+  bumpV *= Math.exp(-dt * 6);
+  playerX -= dx * spc * pSeg.curve * centrifugal * (hb ? 0.6 : 1);
+  const latV = (playerX - px0) / dt;
+  grace = Math.max(0, grace - dt); scrapeT -= dt;
+  if (Math.abs(playerX) > WALL) {
+    const sd = playerX > 0 ? 1 : -1;
+    playerX = sd * WALL;
+    if (playing && crashT === 0 && spinT === 0 && speed > maxSpeed * 0.05) {
+      if (grace === 0 && speed > maxSpeed * 0.3 && latV * sd > 0.9) startCrash(sd, 'BENTUR PEMBATAS!', -sd * 0.8);
+      else {            // lecet: gesek pembatas, percikan api, mobil terdorong balik
+        speed = Math.max(0, speed - maxSpeed * 0.5 * dt); playerX = sd * (WALL - 0.015); shake = Math.max(shake, 0.3);
+        for (let k = 0; k < 2; k++) spawn('spark', W / 2 + sd * W * 0.13, H * 0.86);
+        if (scrapeT <= 0) { noise(0.18, 0.07, 2600); scrapeT = 0.15; }
+      }
+    }
+  }
+  const tYaw = drifting ? st * 0.5 : st * 0.07;
+  yaw = lerp(yaw, tYaw, 1 - Math.exp(-dt * 9));
+  // crash: mobil muter 180 derajat (hadap belakang), berhenti sebentar, lalu pulih
+  if (crashT > 0) {
+    crashT += dt / 1.7;
+    if (crashT >= 1) { crashT = 0; spin = 0; grace = 1.2; }
+    else {
+      const t = crashT;
+      const a = t < 0.3 ? Math.PI * (1 - Math.pow(1 - t / 0.3, 2)) : t < 0.6 ? Math.PI : Math.PI + Math.PI * ease(0, 1, (t - 0.6) / 0.4);
+      spin = crashDir * a;
+      if (t < 0.6) speed = Math.max(0, speed - maxSpeed * 1.1 * dt);
+      playerX = clamp(playerX + crashPush * dt * (1 - t), -WALL, WALL);
+      shake = Math.max(shake, t < 0.3 ? 0.6 : 0.2);
+      if (frameId % 2 === 0) { spawn('smoke', W / 2 + rnd(-0.14, 0.14) * W, H * 0.92); spawn('smoke', W / 2 + rnd(-0.14, 0.14) * W, H * 0.9); }
+    }
+  }
+  // spin: tombol SPIN / tombol R = mobil muter 360 derajat
+  if (input.spinKey) { input.spinKey = false; doSpin(); }
+  if (spinT > 0) {
+    spinT += dt / 1.0;
+    if (spinT >= 1) {
+      spinT = 0; spin = 0; yaw = 0; grace = Math.max(grace, 0.5);
+      reward += 40; nitro = Math.min(100, nitro + 12); flash('+40  N2O +12');
+    }
+    else {
+      spin = spinDir * TAU * (1 - Math.pow(1 - spinT, 2));
+      speed = Math.max(0, speed - maxSpeed * 0.16 * dt);
+      playerX = clamp(playerX + spinDir * dt * (0.7 + 1.3 * clamp(speed / maxSpeed, 0, 1)) * (1 - spinT), -WALL, WALL);
+      shake = Math.max(shake, 0.35);
+      if (frameId % 2 === 0) { spawn('smoke', W / 2 + rnd(-0.14, 0.14) * W, H * 0.92); spawn('smoke', W / 2 + rnd(-0.14, 0.14) * W, H * 0.9); }
+    }
+  }
+
+  position += speed * dt;
+  dist += speed * dt;
+  if (playing) {
+    reward += speed * dt * 0.0006 + (drifting ? dt * 15 : 0);
+    if (dist * 0.006 >= target) { reward += 500; target += 9500; flash('FINISH! +500'); }
+  }
+  if (position >= trackLength) position -= trackLength;
+  bgOff += pSeg.curve * (speed * dt / segLen) * 0.0009;
+  shake = Math.max(0, shake - dt * 2.2);
+
+  // traffic
+  const pz = position + playerZ, win = Math.max(segLen, speed * dt * 1.2);
+  for (let i = 0; i < cars.length; i++) {
+    const car = cars[i], old = findSeg(car.z);
+    carAI(car, dt);
+    car.z += car.speed * dt;
+    if (car.z >= trackLength) car.z -= trackLength;
+    const ns = findSeg(car.z);
+    if (ns !== old) { const k = old.cars.indexOf(car); if (k >= 0) old.cars.splice(k, 1); ns.cars.push(car); }
+    const rel = ((car.z - pz) % trackLength + trackLength) % trackLength;
+    car.rel = rel;
+    if (playing) {
+      if (car.prevRel > 0 && car.prevRel < trackLength * 0.25 && rel > trackLength * 0.75 && car.prevRel < segLen * 8) {
+        passed++; reward += 50; nitro = Math.min(100, nitro + 8); flash('SALIP!');
+        if (Math.abs(playerX - car.offset) < CAR_U * 1.8) { risk++; reward += 30; nitro = Math.min(100, nitro + 6); flash('NEAR MISS! +30'); }
+      }
+      const close = rel < win || rel > trackLength - segLen * 0.3;
+      if (close && crashT === 0 && grace === 0 && speed > car.speed * 1.02 && Math.abs(playerX - car.offset) < CAR_U * 1.05) {
+        // senggolan realistis: tanpa teks, tanpa guncangan layar
+        const dx = playerX - car.offset, dir = dx >= 0 ? 1 : -1;
+        const depth = clamp(1 - Math.abs(dx) / (CAR_U * 1.05), 0, 1);   // 0 = cuma lecet samping, 1 = hantam belakang
+        const rv = speed - car.speed;
+        speed = lerp(speed, car.speed, 0.3 + 0.5 * depth);
+        bumpV += dir * (1.1 - 0.5 * depth);                             // terpental menjauh dari mobil lain
+        car.offset = clamp(car.offset - dir * (0.05 + 0.04 * (1 - depth)), -0.9, 0.9);  // mobil lain ikut terdorong
+        yaw += dir * 0.3;
+        grace = Math.max(grace, 0.4);
+        for (let k = 0; k < 4; k++) spawn('spark', W / 2 + dir * -W * 0.1 + rnd(-0.03, 0.03) * W, H * 0.88);
+        noise(0.16, 0.05, 1500);
+        hitCar(car, dx, depth, clamp(rv / (maxSpeed * 0.5), 0.4, 1.5));
+      }
+      if (crashT === 0 && grace === 0 && rel > trackLength - segLen * 1.5 && car.speed > speed + maxSpeed * 0.03 && Math.abs(playerX - car.offset) < CAR_U * 1.05) rearHit(car);
+    }
+    if (car.hitT > 0) car.hitT = Math.max(0, car.hitT - dt * 1.6);
+    car.prevRel = rel;
+  }
+  trafficInteract(dt);
+  crewUpdate(dt);
+
+  // hentakan + asap/percikan dari mobil rusak
+  pHit = Math.max(0, pHit - dt * 1.8);
+  if (playing && pDmg.lvl > 0.35 && frameId % (pDmg.lvl > 0.7 ? 2 : 4) === 0) spawnAt('dsmoke', W / 2 + rnd(-0.06, 0.06) * W, H * 0.84, rnd(6, 11) * DPR * (0.8 + pDmg.lvl));
+  if (playing && pDmg.lvl > 0.7 && speed > maxSpeed * 0.3 && Math.random() < 0.15) spawn('spark', W / 2 + rnd(-0.1, 0.1) * W, H * 0.9);
+
+  // particles
+  const cxp = W / 2, byp = H * 0.935, pw = W * 0.22;
+  if (drifting) { spawn('smoke', cxp - pw * 0.4, byp); spawn('smoke', cxp + pw * 0.4, byp); }
+  if (off && speed > maxSpeed * 0.15) { spawn('dust', cxp - pw * 0.4, byp); spawn('dust', cxp + pw * 0.4, byp); }
+  if (nosOn) { spawn('spark', cxp - pw * 0.18, byp - pw * 0.1); spawn('spark', cxp + pw * 0.18, byp - pw * 0.1); }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life += dt;
+    if (p.life > p.max) { particles.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; if (p.g) p.vy += p.g * dt;
+  }
+  for (const l of lines) l.p = (l.p + dt * (0.4 + spc * 1.6)) % 1;
+
+  // fov
+  const fovT = 100 + (nosOn ? 22 : 0) + clamp(spc, 0, 1) * 6;
+  fov = lerp(fov, fovT, 1 - Math.exp(-dt * 5));
+  camDepth = 1 / Math.tan(fov * Math.PI / 360);
+  playerZ = camHeight * camDepth;
+
+  wheelSvg.style.transform = 'rotate(' + wheelRot.toFixed(1) + 'deg)';
+  hud();
+  audioTick();
+}
+
+let tk = '';
+for (let i = 0; i <= 36; i++) {
+  const a = (-125 + i * 250 / 36) * Math.PI / 180, maj = i % 4 === 0, r0 = maj ? 39 : 43, sn = Math.sin(a), cs = Math.cos(a);
+  tk += '<line x1="' + (60 + sn * r0) + '" y1="' + (60 - cs * r0) + '" x2="' + (60 + sn * 48) + '" y2="' + (60 - cs * 48) + '" stroke="' + (i > 29 ? '#ff2b45' : '#fff') + '" stroke-width="' + (maj ? 2 : 1) + '" opacity="' + (maj ? 0.95 : 0.55) + '"/>';
+}
+$('gTicks').innerHTML = tk;
+const fmt = n => Math.round(n).toLocaleString('id-ID');
+let hudTick = 0, lastSpd = -1;
+function hud() {
+  const kmh = speed / maxSpeed * 260;
+  $('needle').setAttribute('transform', 'rotate(' + (-125 + clamp(kmh / 360, 0, 1) * 250).toFixed(1) + ' 60 60)');
+  if ((hudTick++ & 3) !== 0) return;
+  const s = Math.round(kmh);
+  if (s !== lastSpd) { $('spd').textContent = s; lastSpd = s; $('gear').textContent = clamp(1 + Math.floor(kmh / 55), 1, 6); }
+  const m = dist * 0.006;
+  $('jm').textContent = fmt(m); $('jt').textContent = fmt(target);
+  $('jbar').style.width = (clamp((m - (target - 9500)) / 9500, 0, 1) * 100).toFixed(1) + '%';
+  $('hadiah').textContent = fmt(reward); $('rival').textContent = passed; $('risiko').textContent = risk;
+  $('nbar').style.width = nitro.toFixed(0) + '%';
+  $('montir').textContent = !crew.job ? (crew.q.length ? 'Antre ' + crew.q.length : 'Siaga') : crew.ph === 'run' ? 'Berlari' : crew.ph === 'work' ? 'Memperbaiki' : 'Kembali';
+  $('nitroWrap').classList.toggle('on', nosOn);
+}
+
+/* ---------- drawing helpers ---------- */
+function poly(col, a) {
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(a[0], a[1]);
+  for (let i = 2; i < a.length; i += 2) ctx.lineTo(a[i], a[i + 1]);
+  ctx.closePath(); ctx.fill();
+}
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+  ctx.fill();
+}
+
+/* mountains: periodic ridged sums so they wrap with the parallax offset */
+const MT = [
+  { k: [2, 5, 11], a: [0.55, 0.3, 0.15], p: [0.4, 2.1, 4.2], amp: 0.2, par: 0.35, col: '#b4a3bb' },
+  { k: [3, 7, 13], a: [0.5, 0.32, 0.18], p: [1.3, 0.2, 3.3], amp: 0.14, par: 0.7, col: '#b98a6e' },
+  { k: [4, 9, 17], a: [0.5, 0.3, 0.2], p: [2.4, 5.1, 0.9], amp: 0.075, par: 1.0, col: '#a2705a' }
+];
+function ridge(L, x, P) {
+  let v = 0;
+  for (let i = 0; i < 3; i++) v += L.a[i] * (1 - Math.abs(Math.sin(TAU * L.k[i] * x / P + L.p[i])));
+  return v;
+}
+const balloons = Array.from({ length: 6 }, (_, i) => ({
+  x: rnd(0, 1), y: rnd(0.1, 0.28), s: rnd(0.7, 1.2), c: ['#e0443c', '#f2b134', '#3d7fd6', '#e86aa6', '#4fb58a', '#8a63d2'][i]
+}));
+
+const stars = Array.from({ length: 50 }, () => ({ x: rnd(0, 1), y: rnd(0, 0.7), r: rnd(0.5, 1.4) }));
+const city = Array.from({ length: 40 }, () => ({ w: rnd(0.02, 0.05), h: rnd(0.2, 1), c: pick(['#ff2bd6', '#43c6ff', '#8a3ffc']) }));
+function drawBackground(dt) {
+  const sky = ctx.createLinearGradient(0, 0, 0, horizon);
+  sky.addColorStop(0, '#05030d'); sky.addColorStop(0.6, '#1a0b3d'); sky.addColorStop(1, '#4a1670');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, horizon + 2);
+  ctx.fillStyle = '#fff';
+  for (const s of stars) { ctx.globalAlpha = 0.4 + 0.4 * Math.sin(time * 2 + s.x * 40); ctx.fillRect(s.x * W, s.y * horizon, s.r * DPR, s.r * DPR); }
+  ctx.globalAlpha = 1;
+  // skyline, two parallax layers
+  for (let layer = 0; layer < 2; layer++) {
+    const par = 0.4 + layer * 0.5, span = W * 1.6;
+    ctx.fillStyle = layer ? '#0d0820' : '#1a0f36';
+    city.forEach((b, i) => {
+      const bx = (((i / city.length) * span - bgOff * W * par) % span + span) % span - W * 0.3;
+      const bh = b.h * H * (layer ? 0.12 : 0.2), bw = b.w * W * (layer ? 1.2 : 1);
+      ctx.fillRect(bx, horizon - bh, bw, bh + 2);
+      if (layer) { ctx.fillStyle = b.c; ctx.fillRect(bx, horizon - bh, bw, Math.max(1, DPR)); ctx.fillStyle = '#0d0820'; }
+    });
+  }
+  const hz = ctx.createLinearGradient(0, horizon - H * 0.12, 0, horizon + 2);
+  hz.addColorStop(0, 'rgba(255,43,214,0)'); hz.addColorStop(1, 'rgba(255,43,214,0.45)');
+  ctx.fillStyle = hz; ctx.fillRect(0, horizon - H * 0.12, W, H * 0.12 + 2);
+  ctx.fillStyle = HAZE; ctx.fillRect(0, horizon + 1, W, H - horizon);
+}
+
+function project(p, camX, camY, camZ, cx) {
+  p.camera.x = (p.world.x || 0) - camX; p.camera.y = p.world.y - camY; p.camera.z = p.world.z - camZ;
+  p.screen.scale = camDepth / p.camera.z;
+  p.screen.x = Math.round(cx + p.screen.scale * p.camera.x * cx);
+  p.screen.y = Math.round(horizon - p.screen.scale * p.camera.y * (H / 2));
+  p.screen.w = Math.round(p.screen.scale * roadWidth * cx);
+}
+
+function drawSegment(s) {
+  const x1 = s.p1.screen.x, y1 = s.p1.screen.y, w1 = s.p1.screen.w;
+  const x2 = s.p2.screen.x, y2 = s.p2.screen.y, w2 = s.p2.screen.w;
+  ctx.fillStyle = s.alt ? '#0b0816' : '#0e0a1a';
+  ctx.fillRect(0, y2, W, y1 - y2 + 1);
+  poly(s.alt ? 'rgba(255,43,214,0.6)' : 'rgba(123,47,242,0.5)', [x1 - w1, y1, x1 - w1 * 0.955, y1, x2 - w2 * 0.955, y2, x2 - w2, y2]);
+  poly(s.alt ? 'rgba(67,198,255,0.6)' : 'rgba(43,123,255,0.5)', [x1 + w1 * 0.955, y1, x1 + w1, y1, x2 + w2, y2, x2 + w2 * 0.955, y2]);
+  poly(s.alt ? '#171326' : '#1b1730', [x1 - w1, y1, x1 + w1, y1, x2 + w2, y2, x2 - w2, y2]);
+  // wet asphalt reflection
+  poly('rgba(120,90,255,0.07)', [x1 - w1 * 0.5, y1, x1 + w1 * 0.5, y1, x2 + w2 * 0.5, y2, x2 - w2 * 0.5, y2]);
+  if (!s.alt) {
+    for (const f of [-0.5, 0, 0.5]) {
+      const a = 0.008;
+      poly('rgba(255,255,255,0.75)', [x1 + w1 * (f - a), y1, x1 + w1 * (f + a), y1, x2 + w2 * (f + a), y2, x2 + w2 * (f - a), y2]);
+    }
+  }
+  if (s.fog > 0.02) {
+    ctx.globalAlpha = Math.min(1, s.fog); ctx.fillStyle = HAZE;
+    ctx.fillRect(0, y2, W, y1 - y2 + 1); ctx.globalAlpha = 1;
+  }
+}
+
+/* ---------- cars & props ---------- */
+const KINDS = {
+  sedan: { bt: 0.5, ct: 0.92, ci: 0.04, hr: 0.66 },
+  suv: { bt: 0.6, ct: 1, ci: 0.02, hr: 0.86 },
+  sport: { bt: 0.44, ct: 0.78, ci: 0.08, hr: 0.58 }
+};
+function drawCar(cx, by, w, h, c, kind, o) {
+  const K = KINDS[kind], bt = K.bt, ct = K.ct, ci = K.ci;
+  const X = u => cx + u * w, Yy = v => by - v * h;
+  const P = (col, a) => {
+    ctx.fillStyle = col; ctx.beginPath();
+    for (let i = 0; i < a.length; i += 2) { const x = X(a[i]), y = Yy(a[i + 1]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+    ctx.closePath(); ctx.fill();
+  };
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(cx, by, w * 0.6, Math.max(1, h * 0.08), 0, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#121018'; ctx.fillRect(X(-0.5), Yy(0.3), w * 0.15, h * 0.3); ctx.fillRect(X(0.35), Yy(0.3), w * 0.15, h * 0.3);
+  P(c.body, [-0.5, 0.12, 0.5, 0.12, 0.5, bt - 0.08, 0.44, bt, -0.44, bt, -0.5, bt - 0.08]);
+  P(c.hi, [-0.44, bt, 0.44, bt, 0.47, bt - 0.06, -0.47, bt - 0.06]);
+  P(c.dark, [-0.4 + ci, bt, 0.4 - ci, bt, 0.3 - ci, ct, -0.3 + ci, ct]);
+  P('#141826', [-0.34 + ci, bt + 0.03, 0.34 - ci, bt + 0.03, 0.26 - ci, ct - 0.05, -0.26 + ci, ct - 0.05]);
+  if (kind === 'sport') {
+    const wt = o && o.player ? 0.74 : 0.66, wb = wt - (o && o.player ? 0.08 : 0.06), ww = o && o.player ? 0.56 : 0.5;
+    P(c.dark, [-0.3, bt, -0.25, bt, -0.25, wb, -0.3, wb]);
+    P(c.dark, [0.25, bt, 0.3, bt, 0.3, wb, 0.25, wb]);
+    P(c.hi, [-ww, wt, ww, wt, ww, wb, -ww, wb]);
+  }
+  P('#17141d', [-0.47, 0.12, 0.47, 0.12, 0.47, 0.26, -0.47, 0.26]);
+  const tl = o && o.player ? (o.brake ? '#ff6a78' : '#ff2b45') : (c.tail || '#b3202c');
+  P(tl, [-0.46, bt - 0.17, -0.14, bt - 0.17, -0.14, bt - 0.09, -0.46, bt - 0.09]);
+  P(tl, [0.14, bt - 0.17, 0.46, bt - 0.17, 0.46, bt - 0.09, 0.14, bt - 0.09]);
+  if (o && o.player) P(tl, [-0.14, bt - 0.14, 0.14, bt - 0.14, 0.14, bt - 0.11, -0.14, bt - 0.11]);
+  P('#ecebee', [-0.1, 0.14, 0.1, 0.14, 0.1, 0.24, -0.1, 0.24]);
+  if (w > 110) {
+    ctx.fillStyle = '#22202a'; ctx.font = '700 ' + Math.round(w * 0.05) + "px 'Chakra Petch', sans-serif";
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('DR-26', X(0), Yy(0.19));
+  }
+  if (o && o.player) {
+    ctx.globalCompositeOperation = 'lighter';
+    const a = o.brake ? 0.7 : 0.38;
+    for (const u of [-0.3, 0.3]) {
+      const g = ctx.createRadialGradient(X(u), Yy(bt - 0.13), 0, X(u), Yy(bt - 0.13), w * 0.3);
+      g.addColorStop(0, 'rgba(255,40,70,' + a + ')'); g.addColorStop(1, 'rgba(255,40,70,0)');
+      ctx.fillStyle = g; ctx.fillRect(X(u) - w * 0.3, Yy(bt - 0.13) - w * 0.3, w * 0.6, w * 0.6);
+    }
+    if (o.nos) {
+      for (const u of [-0.18, 0.18]) {
+        const fr = w * (0.12 + Math.random() * 0.06);
+        const g = ctx.createRadialGradient(X(u), Yy(0.2), 0, X(u), Yy(0.2), fr * 2);
+        g.addColorStop(0, 'rgba(220,245,255,1)'); g.addColorStop(0.35, 'rgba(67,198,255,0.8)'); g.addColorStop(1, 'rgba(67,198,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(X(u) - fr * 2, Yy(0.2) - fr * 2, fr * 4, fr * 4);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+function drawCactus(x, y, h) { // neon street lamp
+  const t = h * 0.05;
+  ctx.fillStyle = '#1a1030'; ctx.fillRect(x - t / 2, y - h, t, h);
+  ctx.fillRect(x - t / 2, y - h, h * 0.3, t);
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x + h * 0.3, y - h, 0, x + h * 0.3, y - h, h * 0.5);
+  g.addColorStop(0, 'rgba(255,60,200,0.9)'); g.addColorStop(1, 'rgba(255,60,200,0)');
+  ctx.fillStyle = g; ctx.fillRect(x - h * 0.3, y - h * 1.5, h * 1.2, h);
+  ctx.globalCompositeOperation = 'source-over';
+}
+function drawRock(x, y, w, h) { // glowing building block
+  ctx.fillStyle = '#120c26'; ctx.fillRect(x - w / 2, y - h * 2.2, w, h * 2.2);
+  const c = (Math.round(x + y) & 1) ? '#43c6ff' : '#ff2bd6';
+  ctx.fillStyle = c; ctx.fillRect(x - w / 2, y - h * 2.2, w, Math.max(1, h * 0.05));
+  ctx.fillStyle = 'rgba(255,230,140,0.7)';
+  for (let i = 0; i < 4; i++) ctx.fillRect(x - w * 0.35 + (i % 2) * w * 0.4, y - h * (0.5 + 0.4 * (i >> 1)), w * 0.18, h * 0.12);
+}
+function drawPost(x, y, w, h) {
+  ctx.fillStyle = '#1b1233'; ctx.fillRect(x - w / 2, y - h, w, h);
+  ctx.fillStyle = '#43c6ff'; ctx.fillRect(x - w / 2, y - h, w, h * 0.22);
+}
+
+function drawSprites(baseSeg) {
+  const half = W / 2;
+  for (let n = drawDist - 1; n > 0; n--) {
+    const s = segments[(baseSeg.index + n) % N];
+    if (s.proj !== frameId) continue;
+    const vis = 1 - s.fog;
+    if (vis < 0.04) continue;
+    const sc = s.p1.screen.scale, u = sc * roadWidth * half;
+    drawBarrier(s, vis);
+    for (const p of s.props) {
+      const x = s.p1.screen.x + u * p.o, y = s.p1.screen.y;
+      let w, h;
+      if (p.t === 'post') { w = u * 0.035; h = u * 0.14; }
+      else if (p.t === 'cactus') { w = u * 0.3 * p.sz; h = u * 0.62 * p.sz; }
+      else { w = u * 0.55 * p.sz; h = u * 0.3 * p.sz; }
+      if (w < 0.8 || x + w < 0 || x - w > W) continue;
+      const clip = y > s.clip;
+      ctx.globalAlpha = vis;
+      if (clip) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, s.clip); ctx.clip(); }
+      if (p.t === 'post') drawPost(x, y, w, h); else if (p.t === 'cactus') drawCactus(x, y, h); else drawRock(x, y, w, h);
+      if (clip) ctx.restore();
+    }
+    for (const car of s.cars) {
+      const pct = (car.z % segLen) / segLen;
+      const scl = lerp(s.p1.screen.scale, s.p2.screen.scale, pct);
+      const cu = scl * roadWidth * half;
+      const x = lerp(s.p1.screen.x, s.p2.screen.x, pct) + cu * car.offset, y = lerp(s.p1.screen.y, s.p2.screen.y, pct);
+      const w = cu * CAR_U * 2 / 2 * 1, h = w * KINDS[car.kind].hr;
+      if (w < 1.5) continue;
+      const clip = y > s.clip;
+      ctx.globalAlpha = vis;
+      if (clip) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, s.clip); ctx.clip(); }
+      if (car.lvl > 0.3 && w > 8 && frameId % 4 === 0) spawnAt('dsmoke', x, y - h * 0.5, w * 0.12);
+      const ht = car.hitT || 0;
+      if (ht > 0 || car.lvl > 0 || Math.abs(car.tilt) > 0.004) {
+        const K = KINDS[car.kind];
+        ctx.save(); ctx.translate(x + Math.sin(ht * 40) * w * 0.03 * ht, y); ctx.rotate(Math.sin(ht * 16) * ht * 0.12 * (car.hitDir || 1) + car.tilt);
+        drawCar(0, 0, w, h, car.col, car.kind, null);
+        drawDamage(0, 0, w, h, car, { top: K.bt, win: { u: 0.05, v: (K.bt + K.ct) / 2, r: 0.2 }, tail: { v0: K.bt - 0.17, v1: K.bt - 0.09, u0: 0.14, u1: 0.46 } });
+        ctx.restore();
+      } else drawCar(x, y, w, h, car.col, car.kind, null);
+      carFx(car, x, y, w, h, vis);
+      if (crew.job === car && crew.ph !== 'idle') { const xc = x - cu * car.offset; drawCrewPair(x, y, w, xc - cu * 1.3, xc + cu * 1.3); }
+      if (clip) ctx.restore();
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* supercar pemain: tampak belakang, body glossy, sayap besar, diffuser, knalpot */
+function drawSuper(cx, by, w, h, o) {
+  const X = u => cx + u * w, Yy = v => by - v * h;
+  const P = (f, a) => { ctx.fillStyle = f; ctx.beginPath(); for (let i = 0; i < a.length; i += 2) { const x = X(a[i]), y = Yy(a[i + 1]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.closePath(); ctx.fill(); };
+  const G = (v0, v1, st) => { const g = ctx.createLinearGradient(0, Yy(v0), 0, Yy(v1)); st.forEach((c, i) => g.addColorStop(i / (st.length - 1), c)); return g; };
+  const tl = o.brake ? '#ff7a88' : '#ff2b45';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(cx, by, w * 0.64, Math.max(1, h * 0.07), 0, 0, TAU); ctx.fill();
+  for (const s of [-1, 1]) {
+    P(G(0, 0.36, ['#08070b', '#1d1b24']), [s * 0.5, 0, s * 0.37, 0, s * 0.37, 0.34, s * 0.48, 0.38, s * 0.5, 0.3]);
+    P('rgba(255,255,255,0.1)', [s * 0.47, 0.05, s * 0.45, 0.05, s * 0.45, 0.3, s * 0.47, 0.3]);
+  }
+  P(G(0.06, 0.3, ['#050408', '#17141f']), [-0.38, 0.06, 0.38, 0.06, 0.4, 0.3, -0.4, 0.3]);
+  ctx.strokeStyle = 'rgba(130,120,160,0.45)'; ctx.lineWidth = Math.max(1, w * 0.006); ctx.beginPath();
+  for (let i = -3; i <= 3; i++) { ctx.moveTo(X(i * 0.09), Yy(0.08)); ctx.lineTo(X(i * 0.11), Yy(0.28)); }
+  ctx.stroke();
+  P(G(0.17, 0.64, ['#2a0c66', '#6a22d6', '#9a52ff', '#cfa6ff']), [-0.5, 0.2, -0.5, 0.46, -0.44, 0.57, -0.3, 0.63, 0.3, 0.63, 0.44, 0.57, 0.5, 0.46, 0.5, 0.2, 0.4, 0.17, -0.4, 0.17]);
+  P('rgba(10,0,30,0.45)', [-0.5, 0.2, 0.5, 0.2, 0.4, 0.17, -0.4, 0.17]);
+  for (const s of [-1, 1]) P('rgba(255,255,255,0.24)', [s * 0.46, 0.5, s * 0.4, 0.57, s * 0.28, 0.61, s * 0.3, 0.57, s * 0.4, 0.52]);
+  P(G(0.62, 0.82, ['#1c1c2c', '#07070d']), [-0.29, 0.62, -0.2, 0.8, 0.2, 0.8, 0.29, 0.62]);
+  P('rgba(180,200,255,0.2)', [-0.22, 0.7, -0.17, 0.78, -0.05, 0.78, -0.1, 0.7]);
+  for (let i = 0; i < 4; i++) { const y = 0.5 + i * 0.035; P('rgba(5,0,15,0.55)', [-0.24, y, 0.24, y, 0.24, y + 0.015, -0.24, y + 0.015]); }
+  for (const s of [-1, 1]) {
+    P(tl, [s * 0.47, 0.4, s * 0.16, 0.455, s * 0.16, 0.49, s * 0.47, 0.44]);
+    P(tl, [s * 0.44, 0.33, s * 0.3, 0.36, s * 0.3, 0.385, s * 0.44, 0.355]);
+    P('#120d1c', [s * 0.27, 0.6, s * 0.32, 0.6, s * 0.32, 0.9, s * 0.27, 0.9]);
+  }
+  P(tl, [-0.12, 0.45, 0.12, 0.45, 0.12, 0.475, -0.12, 0.475]);
+  P(G(0.86, 0.98, ['#0d0a14', '#2b2340']), [-0.5, 0.88, 0.5, 0.88, 0.47, 0.97, -0.47, 0.97]);
+  P('#a66bff', [-0.47, 0.965, 0.47, 0.965, 0.465, 0.985, -0.465, 0.985]);
+  for (const s of [-1, 1]) P('#1a1228', [s * 0.5, 0.84, s * 0.46, 0.84, s * 0.46, 1, s * 0.5, 1]);
+  for (const s of [-1, 1]) {
+    ctx.fillStyle = '#08080c'; ctx.strokeStyle = '#a9a7b8'; ctx.lineWidth = Math.max(1, w * 0.01);
+    ctx.beginPath(); ctx.arc(X(s * 0.22), Yy(0.25), w * 0.04, 0, TAU); ctx.fill(); ctx.stroke();
+  }
+  P('#ecebee', [-0.1, 0.14, 0.1, 0.14, 0.1, 0.24, -0.1, 0.24]);
+  if (w > 110) { ctx.fillStyle = '#22202a'; ctx.font = '700 ' + Math.round(w * 0.05) + "px 'Chakra Petch', sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('DR-26', X(0), Yy(0.19)); }
+  if (o.dmg && o.dmg.lvl > 0) drawDamage(cx, by, w, h, o.dmg, { top: 0.63, win: { u: 0.05, v: 0.72, r: 0.24 }, tail: { v0: 0.4, v1: 0.49, u0: 0.16, u1: 0.47 } });
+  ctx.globalCompositeOperation = 'lighter';
+  const a0 = o.brake ? 0.75 : 0.4, dl = o.dmg ? o.dmg.lvl : 0;
+  for (const u of [-0.3, 0.3]) {
+    const a = a0 * ((u < 0 && dl > 0.5) || (u > 0 && dl > 0.85) ? 0.15 : 1);
+    const g = ctx.createRadialGradient(X(u), Yy(0.44), 0, X(u), Yy(0.44), w * 0.32);
+    g.addColorStop(0, 'rgba(255,40,70,' + a + ')'); g.addColorStop(1, 'rgba(255,40,70,0)');
+    ctx.fillStyle = g; ctx.fillRect(X(u) - w * 0.32, Yy(0.44) - w * 0.32, w * 0.64, w * 0.64);
+  }
+  if (o.nos) for (const u of [-0.22, 0.22]) {
+    const fr = w * (0.12 + Math.random() * 0.06), g = ctx.createRadialGradient(X(u), Yy(0.25), 0, X(u), Yy(0.25), fr * 2);
+    g.addColorStop(0, 'rgba(220,245,255,1)'); g.addColorStop(0.35, 'rgba(67,198,255,0.8)'); g.addColorStop(1, 'rgba(67,198,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(X(u) - fr * 2, Yy(0.25) - fr * 2, fr * 4, fr * 4);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* pembatas beton ala NFS: muka beton, strip neon, tutup atas terang */
+function drawBarrier(s, vis) {
+  const A = s.p1.screen, B = s.p2.screen, k = H / 2 * BAR_H, h1 = A.scale * k, h2 = B.scale * k;
+  if (h1 < 1.5) return;
+  const clip = A.y > s.clip, hot = s.alt ? '#ff2bd6' : '#43c6ff';
+  ctx.globalAlpha = vis;
+  if (clip) { ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, s.clip); ctx.clip(); }
+  for (let sd = -1; sd <= 1; sd += 2) {
+    const xa = A.x + sd * A.w, xb = B.x + sd * B.w, oa = A.x + sd * A.w * 1.1, ob = B.x + sd * B.w * 1.1;
+    poly(s.alt ? '#8c85aa' : '#7f789e', [xa, A.y, xb, B.y, xb, B.y - h2, xa, A.y - h1]);
+    poly('#4a4468', [xa, A.y, xb, B.y, xb, B.y - h2 * 0.28, xa, A.y - h1 * 0.28]);
+    poly(hot, [xa, A.y - h1 * 0.62, xb, B.y - h2 * 0.62, xb, B.y - h2 * 0.78, xa, A.y - h1 * 0.78]);
+    poly('#d6d0ee', [xa, A.y - h1, xb, B.y - h2, ob, B.y - h2, oa, A.y - h1]);
+  }
+  if (clip) ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* penyok, goresan, kaca retak, lampu pecah, bemper kendor (dipakai pemain & rival) */
+function drawDamage(cx, by, w, h, D, cfg) {
+  const X = u => cx + u * w, Yy = v => by - v * h, lvl = D.lvl;
+  ctx.save();
+  ctx.beginPath(); ctx.rect(X(-0.5), Yy(cfg.top), w, (cfg.top - 0.12) * h); ctx.clip();
+  for (const d of D.dents) {
+    const k = clamp((time - d.born) / 0.22, 0, 1), s = k < 1 ? 1.25 - 0.25 * k : 1;
+    const px = X(d.u), py = Yy(d.v), rx = d.r * w * s, ry = rx * 0.7, vx = [], vy = [];
+    ctx.beginPath();
+    for (let i = 0; i < 9; i++) {
+      const a = i / 9 * TAU + d.rot, q = d.j[i];
+      vx.push(px + Math.cos(a) * rx * q); vy.push(py + Math.sin(a) * ry * q);
+      if (i) ctx.lineTo(vx[i], vy[i]); else ctx.moveTo(vx[i], vy[i]);
+    }
+    ctx.closePath();
+    const g = ctx.createRadialGradient(px, py, 0, px, py, rx * 1.1);
+    g.addColorStop(0, 'rgba(8,0,18,0.7)'); g.addColorStop(0.6, 'rgba(8,0,18,0.45)'); g.addColorStop(1, 'rgba(8,0,18,0.1)');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.lineWidth = Math.max(1, w * 0.008); ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath();
+    for (let i = 0; i < 9; i += 2) { ctx.moveTo(px, py); ctx.lineTo(px + (vx[i] - px) * 0.9, py + (vy[i] - py) * 0.9); }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(215,215,225,0.75)'; ctx.lineWidth = Math.max(1, w * 0.006); ctx.beginPath();
+    for (const c of d.sc) { ctx.moveTo(px + c[0] * rx, py + c[1] * ry); ctx.lineTo(px + c[2] * rx, py + c[3] * ry); }
+    ctx.stroke();
+    if (k < 1) {   // kilatan benturan
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,230,190,' + (0.6 * (1 - k)).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(px, py, rx * 1.2, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    }
+  }
+  ctx.restore();
+  if (lvl > 0.3) {   // kaca belakang retak
+    const wx = X(cfg.win.u), wy = Yy(cfg.win.v), R = w * cfg.win.r, n = lvl > 0.6 ? 9 : 5;
+    ctx.strokeStyle = 'rgba(235,245,255,' + (0.5 + 0.4 * lvl).toFixed(2) + ')'; ctx.lineWidth = Math.max(1, w * 0.005); ctx.beginPath();
+    for (let i = 0; i < n; i++) { const a = i / n * TAU + 0.4, L = R * (0.5 + 0.5 * ((i * 37) % 7) / 7); ctx.moveTo(wx, wy); ctx.lineTo(wx + Math.cos(a) * L, wy + Math.sin(a) * L * 0.55); }
+    if (lvl > 0.6) { ctx.moveTo(wx + R * 0.3, wy); ctx.ellipse(wx, wy, R * 0.3, R * 0.16, 0, 0, TAU); }
+    ctx.stroke();
+  }
+  const T = cfg.tail, flick = Math.sin(time * 37) > 0.35;   // lampu belakang pecah, kedip-kedip
+  for (const sd of [-1, 1]) {
+    if (lvl <= (sd < 0 ? 0.5 : 0.85)) continue;
+    ctx.fillStyle = flick ? 'rgba(255,60,80,0.5)' : 'rgba(12,8,18,0.85)';
+    ctx.beginPath(); ctx.moveTo(X(sd * T.u0), Yy(T.v0)); ctx.lineTo(X(sd * T.u1), Yy(T.v0)); ctx.lineTo(X(sd * T.u1), Yy(T.v1)); ctx.lineTo(X(sd * T.u0), Yy(T.v1)); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = Math.max(1, w * 0.004);
+    ctx.beginPath(); ctx.moveTo(X(sd * T.u0), Yy(T.v1)); ctx.lineTo(X(sd * (T.u0 + T.u1) / 2), Yy(T.v0)); ctx.lineTo(X(sd * T.u1), Yy(T.v1)); ctx.stroke();
+  }
+  if (lvl > 0.7) {   // bemper kendor
+    ctx.strokeStyle = '#050308'; ctx.lineWidth = Math.max(1, w * 0.014);
+    ctx.beginPath(); ctx.moveTo(X(-0.47), Yy(0.27)); ctx.lineTo(X(0.47), Yy(0.235)); ctx.stroke();
+    ctx.fillStyle = '#17141d'; ctx.beginPath(); ctx.moveTo(X(0.47), Yy(0.12)); ctx.lineTo(X(0.47), Yy(0.235)); ctx.lineTo(X(0.22), Yy(0.12)); ctx.closePath(); ctx.fill();
+  }
+}
+
+/* supercar tampak depan (saat berputar 180 derajat) */
+function drawSuperFront(cx, by, w, h) {
+  const X = u => cx + u * w, Yy = v => by - v * h;
+  const P = (f, a) => { ctx.fillStyle = f; ctx.beginPath(); for (let i = 0; i < a.length; i += 2) { const x = X(a[i]), y = Yy(a[i + 1]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.closePath(); ctx.fill(); };
+  const G = (v0, v1, st) => { const g = ctx.createLinearGradient(0, Yy(v0), 0, Yy(v1)); st.forEach((c, i) => g.addColorStop(i / (st.length - 1), c)); return g; };
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(cx, by, w * 0.64, Math.max(1, h * 0.07), 0, 0, TAU); ctx.fill();
+  for (const s of [-1, 1]) P(G(0, 0.36, ['#08070b', '#1d1b24']), [s * 0.5, 0, s * 0.37, 0, s * 0.37, 0.34, s * 0.48, 0.38, s * 0.5, 0.3]);
+  P(G(0.1, 0.52, ['#2a0c66', '#6a22d6', '#9a52ff']), [-0.5, 0.14, -0.5, 0.4, -0.42, 0.5, 0.42, 0.5, 0.5, 0.4, 0.5, 0.14, 0.38, 0.1, -0.38, 0.1]);
+  P(G(0.48, 0.62, ['#cfa6ff', '#6a22d6']), [-0.42, 0.5, -0.3, 0.6, 0.3, 0.6, 0.42, 0.5]);
+  P(G(0.58, 0.82, ['#1c1c2c', '#07070d']), [-0.3, 0.6, -0.2, 0.8, 0.2, 0.8, 0.3, 0.6]);
+  P('rgba(180,200,255,0.22)', [-0.22, 0.68, -0.17, 0.77, -0.05, 0.77, -0.1, 0.68]);
+  P('#06050a', [-0.3, 0.12, 0.3, 0.12, 0.26, 0.27, -0.26, 0.27]);
+  P('#120d1c', [-0.5, 0.1, 0.5, 0.1, 0.47, 0.15, -0.47, 0.15]);
+  P('#a66bff', [-0.47, 0.1, 0.47, 0.1, 0.46, 0.115, -0.46, 0.115]);
+  for (const s of [-1, 1]) P('#eaf6ff', [s * 0.46, 0.38, s * 0.2, 0.43, s * 0.2, 0.47, s * 0.46, 0.44]);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const u of [-0.33, 0.33]) {
+    const g = ctx.createRadialGradient(X(u), Yy(0.42), 0, X(u), Yy(0.42), w * 0.3);
+    g.addColorStop(0, 'rgba(255,250,215,0.95)'); g.addColorStop(1, 'rgba(255,250,215,0)');
+    ctx.fillStyle = g; ctx.fillRect(X(u) - w * 0.3, Yy(0.42) - w * 0.3, w * 0.6, w * 0.6);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+/* hujan + bloom (blur murah lewat kanvas kecil) */
+const rain = Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), v: rnd(1.2, 2.2), l: rnd(0.03, 0.06) }));
+function drawRain(dt) {
+  ctx.strokeStyle = 'rgba(190,210,255,0.28)'; ctx.lineWidth = Math.max(1, DPR * 0.8); ctx.beginPath();
+  for (const d of rain) {
+    d.y += d.v * dt * (0.7 + speed / maxSpeed * 0.5); d.x -= dt * 0.06;
+    if (d.y > 1) { d.y = 0; d.x = Math.random(); }
+    if (d.x < 0) d.x += 1;
+    const x = d.x * W, y = d.y * H, L = d.l * H;
+    ctx.moveTo(x, y); ctx.lineTo(x - L * 0.12, y + L);
+  }
+  ctx.stroke();
+}
+let bc = null, bctx = null;
+function bloom() {
+  if (!bc) { bc = document.createElement('canvas'); bctx = bc.getContext('2d'); }
+  const bw = Math.max(2, W >> 3), bh = Math.max(2, H >> 3);
+  if (bc.width !== bw) { bc.width = bw; bc.height = bh; }
+  bctx.drawImage(cv, 0, 0, bw, bh);
+  ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.32; ctx.drawImage(bc, 0, 0, W, H); ctx.restore();
+}
+
+const PURPLE = { body: '#7b2ff2', hi: '#a66bff', dark: '#4a1a9c', tail: '#ff2b45' };
+
+/* supercar tampak samping (saat berputar 90 / 270 derajat), moncong ke kanan */
+function drawSuperSide(cx, by, w, h) {
+  const X = u => cx + u * w, Yy = v => by - v * h;
+  const P = (f, a) => { ctx.fillStyle = f; ctx.beginPath(); for (let i = 0; i < a.length; i += 2) { const x = X(a[i]), y = Yy(a[i + 1]); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); } ctx.closePath(); ctx.fill(); };
+  const G = (v0, v1, st) => { const g = ctx.createLinearGradient(0, Yy(v0), 0, Yy(v1)); st.forEach((c, i) => g.addColorStop(i / (st.length - 1), c)); return g; };
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.beginPath(); ctx.ellipse(cx, by, w * 0.85, Math.max(1, h * 0.07), 0, 0, TAU); ctx.fill();
+  // spoiler belakang
+  P('#120d1c', [-0.78, 0.5, -0.66, 0.5, -0.66, 0.56, -0.8, 0.58]);
+  P('#a66bff', [-0.8, 0.56, -0.64, 0.56, -0.64, 0.59, -0.8, 0.59]);
+  // bodi
+  P(G(0.1, 0.64, ['#2a0c66', '#6a22d6', '#9a52ff', '#cfa6ff']), [-0.8, 0.14, -0.8, 0.34, -0.7, 0.44, -0.4, 0.47, -0.16, 0.64, 0.14, 0.64, 0.38, 0.46, 0.72, 0.4, 0.82, 0.3, 0.82, 0.14]);
+  P('rgba(10,0,30,0.45)', [-0.8, 0.14, 0.82, 0.14, 0.82, 0.2, -0.8, 0.2]);
+  // kaca
+  P(G(0.46, 0.64, ['#1c1c2c', '#07070d']), [-0.3, 0.48, -0.14, 0.61, 0.12, 0.61, 0.32, 0.48]);
+  P('rgba(180,200,255,0.22)', [-0.2, 0.52, -0.12, 0.59, -0.02, 0.59, -0.04, 0.52]);
+  // garis pintu
+  ctx.strokeStyle = 'rgba(10,0,30,0.5)'; ctx.lineWidth = Math.max(1, w * 0.006); ctx.beginPath();
+  ctx.moveTo(X(0.04), Yy(0.47)); ctx.lineTo(X(0.04), Yy(0.2)); ctx.stroke();
+  // lampu belakang & depan
+  P('#ff2b45', [-0.8, 0.3, -0.7, 0.4, -0.72, 0.43, -0.8, 0.36]);
+  P('#eaf6ff', [0.82, 0.3, 0.72, 0.4, 0.7, 0.37, 0.82, 0.26]);
+  // roda
+  for (const u of [-0.5, 0.5]) {
+    ctx.fillStyle = '#08080c'; ctx.strokeStyle = '#a9a7b8'; ctx.lineWidth = Math.max(1, w * 0.012);
+    ctx.beginPath(); ctx.arc(X(u), Yy(0.15), w * 0.1, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#a9a7b8'; ctx.beginPath(); ctx.arc(X(u), Yy(0.15), w * 0.035, 0, TAU); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'lighter';
+  for (const u of [0.82]) {
+    const g = ctx.createRadialGradient(X(u), Yy(0.32), 0, X(u), Yy(0.32), w * 0.25);
+    g.addColorStop(0, 'rgba(255,250,215,0.8)'); g.addColorStop(1, 'rgba(255,250,215,0)');
+    ctx.fillStyle = g; ctx.fillRect(X(u) - w * 0.25, Yy(0.32) - w * 0.25, w * 0.5, w * 0.5);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawPlayer() {
+  const w = W * CAR_U * 1.08, h = w * 0.7;
+  const bob = Math.sin(time * 38) * Math.min(1.4, speed / maxSpeed * 1.4) * DPR;
+  const sp = spinT > 0 || crashT > 0, c = Math.cos(spin), sn = Math.sin(spin), front = sp && c < 0;
+  const o = { brake: input.brake && mode === 'play', nos: nosOn, dmg: pDmg };
+  // saat berputar: tampak belakang/depan memudar ke tampak samping (lebih lebar, bukan lebih sempit)
+  const draw = () => {
+    if (!sp) { drawSuper(0, 0, w, h, o); return; }
+    const ac = Math.abs(c), as = Math.abs(sn), base = ctx.globalAlpha;
+    if (ac > 0.04) {
+      ctx.save(); ctx.globalAlpha = base * Math.min(1, ac * 2); ctx.scale(0.6 + 0.4 * ac, 1);
+      if (front) drawSuperFront(0, 0, w, h); else drawSuper(0, 0, w, h, o);
+      ctx.restore();
+    }
+    if (as > 0.04) {
+      ctx.save(); ctx.globalAlpha = base * Math.min(1, as * 2);
+      ctx.scale((sn > 0 ? 1 : -1) * (0.55 + 0.45 * as), 1);
+      drawSuperSide(0, 0, w, h);
+      ctx.restore();
+    }
+  };
+  if (!sp) {   // kolam cahaya lampu depan di aspal basah
+    const bx = W / 2 + yaw * w * 0.25, ty = horizon + (H - horizon) * 0.35;
+    const g = ctx.createLinearGradient(0, H * 0.9, 0, ty);
+    g.addColorStop(0, 'rgba(255,245,215,0.24)'); g.addColorStop(1, 'rgba(255,245,215,0)');
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.beginPath();
+    ctx.moveTo(bx - w * 0.4, H * 0.9); ctx.lineTo(bx - w * 0.1, ty); ctx.lineTo(bx + w * 0.1, ty); ctx.lineTo(bx + w * 0.4, H * 0.9);
+    ctx.closePath(); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+  }
+  ctx.save();
+  const jolt = Math.sin(pHit * 14) * pHit;   // hentakan saat tabrakan
+  ctx.translate(W / 2 + yaw * w * 0.25 + jolt * w * 0.04, H * 0.935 + bob - pHit * h * 0.04);
+  ctx.rotate(yaw * 0.45 + pHitDir * jolt * 0.1);
+  if (sp) { ctx.translate(sn * w * 0.25, 0); ctx.rotate(sn * 0.12); }
+  ctx.save(); ctx.scale(1, -0.55); ctx.globalAlpha = 0.2; draw(); ctx.restore();   // pantulan di aspal basah
+  draw();
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    const t = p.life / p.max;
+    if (p.k === 'smoke') { ctx.fillStyle = 'rgba(235,235,240,' + (0.5 * (1 - t)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + t * 2), 0, TAU); ctx.fill(); }
+    else if (p.k === 'dust') { ctx.fillStyle = 'rgba(214,180,128,' + (0.55 * (1 - t)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + t * 2), 0, TAU); ctx.fill(); }
+    else if (p.k === 'dsmoke') { ctx.fillStyle = 'rgba(40,38,48,' + (0.55 * (1 - t)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + t * 2.2), 0, TAU); ctx.fill(); }
+    else if (p.k === 'chip') { ctx.globalAlpha = 1 - t * t; ctx.fillStyle = p.col; ctx.fillRect(p.x, p.y, p.r, p.r * 0.7); ctx.globalAlpha = 1; }
+    else { ctx.fillStyle = 'rgba(190,235,255,' + (1 - t).toFixed(3) + ')'; ctx.fillRect(p.x, p.y, p.r, p.r * 3); }
+  }
+}
+
+/* ---------- render ---------- */
+function render(dt) {
+  frameId++;
+  ctx.save();
+  if (shake > 0) ctx.translate(rnd(-1, 1) * shake * 9 * DPR, rnd(-1, 1) * shake * 7 * DPR);
+  drawBackground(dt);
+
+  const baseSeg = findSeg(position), basePct = (position % segLen) / segLen;
+  const pSeg = findSeg(position + playerZ), pPct = ((position + playerZ) % segLen) / segLen;
+  const playerY = lerp(pSeg.p1.world.y, pSeg.p2.world.y, pPct);
+  const cx = W / 2;
+  let maxy = H, x = 0, dx = -(baseSeg.curve * basePct);
+
+  for (let n = 0; n < drawDist; n++) {
+    const s = segments[(baseSeg.index + n) % N];
+    s.looped = s.index < baseSeg.index;
+    s.fog = 1 - 1 / Math.exp((n / drawDist) * (n / drawDist) * fogDensity);
+    const cz = position - (s.looped ? trackLength : 0);
+    project(s.p1, playerX * roadWidth - x, playerY + camHeight, cz, cx);
+    project(s.p2, playerX * roadWidth - x - dx, playerY + camHeight, cz, cx);
+    x += dx; dx += s.curve;
+    s.clip = maxy;
+    if (s.p1.camera.z <= camDepth) continue;
+    s.proj = frameId;
+    if (s.p2.screen.y >= s.p1.screen.y || s.p2.screen.y >= maxy) continue;
+    drawSegment(s);
+    maxy = s.p1.screen.y;
+  }
+  drawSprites(baseSeg);
+  drawPlayer();
+  if (crew.job === 'player' && crew.ph !== 'idle') { const pw = W * CAR_U * 1.08; drawCrewPair(W / 2 + yaw * pw * 0.25, H * 0.935, pw, -pw * 0.5, W + pw * 0.5); }
+  drawParticles();
+  drawRain(dt);
+
+  // speed lines
+  const spc = clamp(speed / maxSpeed, 0, 1.4);
+  if (spc > 0.55) {
+    const R = Math.hypot(W, H) * 0.6, a0 = clamp((spc - 0.55) * 0.9, 0, 0.6);
+    ctx.lineWidth = Math.max(1, DPR); ctx.strokeStyle = nosOn ? 'rgba(200,240,255,' + a0 + ')' : 'rgba(255,255,255,' + (a0 * 0.6) + ')';
+    ctx.beginPath();
+    for (const l of lines) {
+      const r0 = R * (0.3 + l.p * 0.7), r1 = r0 + R * l.len * spc;
+      const ca = Math.cos(l.a), sa = Math.sin(l.a);
+      ctx.moveTo(W / 2 + ca * r0, horizon + sa * r0 * 0.7); ctx.lineTo(W / 2 + ca * r1, horizon + sa * r1 * 0.7);
+    }
+    ctx.stroke();
+  }
+  if (spc > 0.4) {
+    const a1 = clamp((spc - 0.4) * 0.8, 0, 0.55), c = 'rgba(20,12,30,';
+    const eg = ctx.createLinearGradient(0, 0, W, 0);
+    eg.addColorStop(0, c + (a1 * 0.5).toFixed(3) + ')'); eg.addColorStop(0.22, c + '0)'); eg.addColorStop(0.78, c + '0)'); eg.addColorStop(1, c + (a1 * 0.5).toFixed(3) + ')');
+    ctx.fillStyle = eg; ctx.fillRect(0, horizon, W, H - horizon);
+    ctx.lineWidth = Math.max(1, DPR * 1.5);
+    lines.forEach((l, i) => {
+      const t = l.p, y = horizon + (H - horizon) * t * t, len = W * (0.05 + 0.2 * t) * spc, d = i & 1 ? 1 : -1, x0 = i & 1 ? 0 : W;
+      ctx.strokeStyle = 'rgba(255,240,220,' + (a1 * t).toFixed(3) + ')';
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + d * len, y + len * 0.05); ctx.stroke();
+    });
+  }
+  bloom();
+  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+  if (nosOn) { ctx.fillStyle = nitroGrad; ctx.fillRect(0, 0, W, H); }
+  if (shake > 0.4) { ctx.fillStyle = 'rgba(255,40,60,' + ((shake - 0.4) * 0.3).toFixed(3) + ')'; ctx.fillRect(0, 0, W, H); }
+  ctx.restore();
+}
+
+/* ---------- main loop ---------- */
+let last = 0;
+function frame(t) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, Math.max(0.001, (t - last) / 1000 || 0.016));
+  last = t;
+  if (mode === 'pause' || (mode === 'play' && portraitMQ.matches)) audioTick(); else update(dt);
+  render(dt);
+}
+
+const SCENES = [
+ ['Neon city speed', 'Ultra realistic Need for Speed No Limits style, modified sports car speeding through neon city at night, motion blur, rain-soaked asphalt, cyberpunk lighting, dramatic camera angle, high detail, 8k'],
+ ['Side by side', 'Need for Speed No Limits aesthetic, two heavily modified cars racing side by side on highway at night, neon underglow, sparks flying, dark cinematic atmosphere, intense speed, ultra detailed'],
+ ['Garage', 'Need for Speed No Limits garage scene, luxury sports car being customized, neon lights, tools and parts scattered, dark atmospheric lighting, highly detailed, realistic'],
+ ['Aventador widebody', 'Need for Speed No Limits style, Lamborghini Aventador with aggressive body kit and widebody, neon purple underglow, parked in rainy night street, cinematic lighting, ultra realistic'],
+ ['GTR R35 drift', 'Need for Speed No Limits, heavily modified Nissan GTR R35 with widebody kit, carbon fiber parts, blue neon lights, drifting in city street at night, motion blur, dynamic angle'],
+ ['Police chase', 'Need for Speed No Limits police chase scene, sports car escaping police cars on highway, sparks, smoke, neon lights, intense action, cinematic composition, ultra detailed'],
+ ['Epic drift', 'Epic drift scene in Need for Speed No Limits style, car sliding sideways with smoke and tire marks, neon city background, dramatic low angle, high speed, cinematic lighting'],
+ ['Key art poster', 'Official Need for Speed No Limits game poster style, multiple modified cars lined up, dark neon city background, intense atmosphere, dramatic lighting, high quality key art'],
+ ['Street racer', 'Need for Speed No Limits style, cool street racer character leaning on modified car, neon lights reflecting on car body, dark urban background, cinematic portrait, highly detailed']
+];
+$('galList').innerHTML = SCENES.map((c, i) => '<div class="gcard"><b>' + (i + 1) + '. ' + c[0] + '</b><p>' + c[1] + '</p><button class="chip" data-i="' + i + '" type="button">Salin prompt</button></div>').join('');
+$('galList').addEventListener('click', e => { const i = e.target.dataset && e.target.dataset.i; if (i == null) return; try { navigator.clipboard.writeText(SCENES[i][1]); e.target.textContent = 'Tersalin'; } catch (_) {} });
+$('gal').addEventListener('click', () => { $('gallery').hidden = false; });
+$('galx').addEventListener('click', () => { $('gallery').hidden = true; });
+buildRoad();
+resize();
+window.addEventListener('resize', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stageEl);
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
